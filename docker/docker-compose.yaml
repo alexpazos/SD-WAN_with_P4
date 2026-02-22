@@ -1,0 +1,77 @@
+# Ejemplo de configuración basada en:
+# - https://github.com/openconfig/gnmic/tree/main/examples/deployments/1.single-instance/2.kafka-output/docker-compose
+# - https://github.com/openconfig/gnmic/tree/main/examples/deployments/1.single-instance/4.prometheus-output/docker-compose
+
+version: '3' 
+
+services:
+  gnmic:
+    image: ghcr.io/openconfig/gnmic:latest
+    container_name: gnmic
+    volumes:
+      - ./gnmic-subscription.yaml:/app/gnmic.yaml
+    command: "subscribe --config /app/gnmic.yaml"
+    depends_on:
+      - kafka
+      - consul-agent
+
+  kafka:
+    image: wurstmeister/kafka:latest
+    hostname: kafka
+    container_name: kafka
+    ports:
+      - "9092:9092"
+      - "9000:9000"
+    environment:
+      KAFKA_ADVERTISED_HOST_NAME: kafka
+      KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
+      KAFKA_ADVERTISED_PORT: 9092
+      KAFKA_LOG_DIRS: "/tmp/kafka-logs"
+      KAFKA_CREATE_TOPICS: "interface-status:1:1,traffic-stats:1:1"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    depends_on:
+      - zookeeper
+    logging:
+      driver: none
+    healthcheck:
+      test: ["CMD", "kafka-topics.sh", "--list", "--zookeeper", "zookeeper:2181"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  zookeeper:
+    image: zookeeper
+    hostname: zookeeper
+    container_name: zookeeper
+    ports:
+      - "2181"
+    logging:
+      driver: none
+      
+  consul-agent:
+    image: hashicorp/consul:latest
+    container_name: consul
+    ports:
+      - 8500:8500
+      - 8600:8600/udp
+    command: agent -server -ui -node=server-1 -bootstrap-expect=1 -client=0.0.0.0    
+
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: prometheus
+    volumes:
+      - ./prometheus/:/etc/prometheus/
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yaml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--web.console.libraries=/usr/share/prometheus/console_libraries'
+      - '--web.console.templates=/usr/share/prometheus/consoles'
+      - '--log.level=debug'
+    ports:
+      - 9090:9090
+
+networks:
+  default:
+    name: clab
+    external: true

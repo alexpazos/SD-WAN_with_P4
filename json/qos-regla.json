@@ -1,0 +1,14 @@
+{
+  "dpid": 1,
+  "priority": 50000,
+  "match": {
+    "in_port": 1,
+    "eth_type": 2048,
+    "ip_proto": 17,
+    "udp_dst": 5005
+  },
+  "actions": [
+    {"type": "SET_QUEUE", "queue_id": 1},
+    {"type": "OUTPUT", "port": 2}
+  ]
+}

@@ -1,0 +1,2 @@
+
+snap install terraform --classic

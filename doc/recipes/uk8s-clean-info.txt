@@ -1,0 +1,50 @@
+Para ver las imágenes:
+
+microk8s ctr images list
+
+# de la práctica
+microk8s ctr images list | grep educaredes
+
+# relativas a pruebas hechas
+microk8s ctr images list | grep nginx
+microk8s ctr images list | grep mysql
+
+
+Y lo que ocupan:
+https://github.com/canonical/microk8s/issues/1363
+
+cd /var/snap/microk8s/common
+sudo du -hsx * | sort -rh | head -10
+
+ver la web para sugerencias sobre configurar garbage collection
+
+Posibilidad de hacer un prune con:
+https://pgmac.net.au/technology/2023/12/26/microk8s-garbage-collection.html
+
+Conclusión: *Se puede limpiar con lo siguiente*
+microk8s ctr images remove <referencia>
+
+y con bucle mejor:
+for image in $(microk8s ctr images list | grep educaredes| awk '{print $1}'); do microk8s ctr images remove $image; done
+
+Y después:
+microk8s ctr content prune references #no tengo claro lo que hace
+
+Limpiar y reducir tamaño de ova con:
+https://blog.anantshri.info/vm-size-reduction-tips-for-ova-distribution/
+
+
+
+
+sudo apt-get clean
+sudo apt-get autoremove
+
+sudo dd if=/dev/zero of=zerofill bs=512K
+rm -rf zerofill
+
+rm ~/.bash_history  
+history -c
+
+Explorar la posibilidad de usar crictl para gestionar las imágenes
+Aunque es mejor explorar la configuración de garbage collection: 
+https://kubernetes.io/docs/concepts/architecture/garbage-collection/#containers-images

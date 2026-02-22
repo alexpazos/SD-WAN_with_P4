@@ -1,0 +1,38 @@
+name: sdedge-nfv-internet
+
+topology:
+  kinds:
+    linux:
+      type: linux-network-multitool
+      group: server
+      image: wbitt/network-multitool:extra
+    nokia_srlinux:
+      type: ixr-d2l
+      group: router
+      image: ghcr.io/nokia/srlinux:latest
+    ovs-bridge:
+      type: ovs-bridge
+      group: switch
+  nodes:
+    s1:
+      kind: linux
+    Internet:
+      kind: ovs-bridge
+    isp1:
+      kind: nokia_srlinux
+      startup-config: isp1.cfg
+    isp2:
+      kind: nokia_srlinux
+      startup-config: isp2.cfg
+    ExtNet1:
+      kind: ovs-bridge
+    ExtNet2:
+      kind: ovs-bridge
+  links:
+    - endpoints: ["isp1:e1-1", "ExtNet1:ExtNet1-eth2"]
+    - endpoints: ["isp2:e1-1", "ExtNet2:ExtNet2-eth2"]
+    - endpoints: ["isp1:e1-2", "Internet:Internet-eth1"]
+    - endpoints: ["isp2:e1-2", "Internet:Internet-eth2"]
+    - endpoints: ["Internet:Internet-eth3", "s1:eth1"]
+    - endpoints: ["isp1:e1-3", "host:isp1_e1-1"]
+    - endpoints: ["isp2:e1-3", "host:isp2_e1-1"]

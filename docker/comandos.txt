@@ -1,0 +1,7 @@
+Comandos para provocar eventos en el topic interface-status:
+- ISP1
+    gnmic -a clab-sdedge-nfv-internet-isp1:57400 -u admin -p NokiaSrl1! --skip-verify set --update-path "/interface[name=ethernet-1/1]/admin-state" --update-value "disable"
+    gnmic -a clab-sdedge-nfv-internet-isp1:57400 -u admin -p NokiaSrl1! --skip-verify set --update-path "/interface[name=ethernet-1/1]/admin-state" --update-value "enable"
+- ISP2
+    gnmic -a clab-sdedge-nfv-internet-isp2:57400 -u admin -p NokiaSrl1! --skip-verify set --update-path "/interface[name=ethernet-1/1]/admin-state" --update-value "disable"
+    gnmic -a clab-sdedge-nfv-internet-isp2:57400 -u admin -p NokiaSrl1! --skip-verify set --update-path "/interface[name=ethernet-1/1]/admin-state" --update-value "enable"

@@ -1,0 +1,179 @@
+#!/bin/bash
+
+# Install MicroK8s and kubectl
+snap install microk8s --classic
+
+echo "Waiting for MicroK8s to become ready. This may take a few moments..."
+if command -v microk8s >/dev/null 2>&1; then
+  mkdir -p ~/.kube
+  sudo microk8s status --wait-ready | sed '/high-availability:/,$d'
+  sudo microk8s config > ~/.kube/config
+else
+  sudo microk8s status --wait-ready | sed '/high-availability:/,$d'
+fi
+
+if ! command -v kubectl >/dev/null 2>&1; then
+  curl -L -s "https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl" -o /home/upm/kubectl
+  sudo install -o root -g root -m 0755 /home/upm/kubectl /usr/local/bin/kubectl
+  rm /home/upm/kubectl
+fi
+
+echo "+ kubectl version --client"
+kubectl version --client
+
+echo "+ kubectl get nodes"
+kubectl get nodes
+
+# Install Terraform
+snap install terraform --classic
+
+# Delete terraform metadata
+TF_DIR="/home/upm/shared/terraform-sdwan/tf"
+
+CLEAN_PATHS=(
+    "$TF_DIR/.terraform"
+    "$TF_DIR/.terraform.lock.hcl"
+    "$TF_DIR/.terraform.tfstate.lock.info"
+    "$TF_DIR/terraform.tfstate"
+    "$TF_DIR/terraform.tfstate.backup"
+)
+
+for path in "${CLEAN_PATHS[@]}"; do
+    if [ -e "$path" ]; then
+        rm -rf "$path"
+    fi
+done
+
+SDWNS=rdsv
+
+#echo "alias kubectl='sudo microk8s kubectl'" >> ~/.bashrc
+
+echo "export SDWNS=$SDWNS" >> ~/.bashrc
+
+sudo microk8s kubectl delete all --all -n default --ignore-not-found >/dev/null 2>&1
+
+if  sudo microk8s kubectl get namespace "$SDWNS" >/dev/null 2>&1; then
+    sudo microk8s kubectl delete all --all -n $SDWNS --ignore-not-found >/dev/null 2>&1
+else
+    sudo microk8s kubectl create namespace $SDWNS
+fi
+
+echo "+ kubectl get namespace $SDWNS"
+sudo microk8s kubectl get namespace $SDWNS
+
+# Enable access to services running on the host machine via fixed IP address
+sudo microk8s enable host-access
+
+# Enable NGINX Ingress Controller for MicroK8 to access pod services through localhost:port
+sudo microk8s enable ingress
+
+# Install Multus CNI and OVS CNI
+sudo microk8s kubectl get daemonset -n kube-system kube-multus-ds >/dev/null 2>&1 || \
+sudo microk8s kubectl apply -f https://raw.githubusercontent.com/k8snetworkplumbingwg/multus-cni/master/deployments/multus-daemonset.yml
+
+sudo microk8s kubectl get daemonset -n kube-system ovs-cni-amd64 >/dev/null 2>&1 || \
+sudo microk8s kubectl apply -f https://raw.githubusercontent.com/k8snetworkplumbingwg/ovs-cni/refs/heads/main/examples/ovs-cni.yml
+
+# Create external interfaces
+echo "+ Creating external interfaces..."
+sudo ovs-vsctl --if-exists del-br AccessNet1
+sudo ovs-vsctl --if-exists del-br AccessNet2
+sudo ovs-vsctl --if-exists  del-br ExtNet1
+sudo ovs-vsctl --if-exists  del-br ExtNet2
+sudo ovs-vsctl --if-exists  del-br MplsWan
+sudo ovs-vsctl --if-exists  del-br Internet
+sudo ovs-vsctl add-br AccessNet1
+sudo ovs-vsctl add-br AccessNet2
+sudo ovs-vsctl add-br ExtNet1
+sudo ovs-vsctl add-br ExtNet2
+sudo ovs-vsctl add-br MplsWan
+
+# Configure Multus accessnet1
+sudo microk8s kubectl get -n $SDWNS network-attachment-definitions accessnet1 >/dev/null 2>&1 || \
+cat <<EOF | sudo microk8s kubectl create -n $SDWNS -f -
+apiVersion: "k8s.cni.cncf.io/v1"
+kind: NetworkAttachmentDefinition
+metadata:
+ name: accessnet1
+ annotations:
+   k8s.v1.cni.cncf.io/resourceName: ovs-cni.network.kubevirt.io/AccessNet1
+spec:
+ config: '{
+   "cniVersion": "0.3.1",
+   "type": "ovs",
+   "bridge": "AccessNet1"
+ }'
+EOF
+
+# Configure Multus accessnet2
+sudo microk8s kubectl get -n $SDWNS network-attachment-definitions accessnet2 >/dev/null 2>&1 || \
+cat <<EOF | sudo microk8s kubectl create -n $SDWNS -f -
+apiVersion: "k8s.cni.cncf.io/v1"
+kind: NetworkAttachmentDefinition
+metadata:
+ name: accessnet2
+ annotations:
+   k8s.v1.cni.cncf.io/resourceName: ovs-cni.network.kubevirt.io/AccessNet2
+spec:
+ config: '{
+   "cniVersion": "0.3.1",
+   "type": "ovs",
+   "bridge": "AccessNet2"
+ }'
+EOF
+
+# Configure Multus extnet1
+sudo microk8s kubectl get -n $SDWNS network-attachment-definitions extnet1 >/dev/null 2>&1 || \
+cat <<EOF | sudo microk8s kubectl create -n $SDWNS -f -
+apiVersion: "k8s.cni.cncf.io/v1"
+kind: NetworkAttachmentDefinition
+metadata:
+ name: extnet1
+ annotations:
+   k8s.v1.cni.cncf.io/resourceName: ovs-cni.network.kubevirt.io/ExtNet1
+spec:
+ config: '{
+   "cniVersion": "0.3.1",
+   "type": "ovs",
+   "bridge": "ExtNet1"
+ }'
+EOF
+
+
+# Configure Multus extnet2
+sudo microk8s kubectl get -n $SDWNS network-attachment-definitions extnet2 >/dev/null 2>&1 || \
+cat <<EOF | sudo microk8s kubectl create -n $SDWNS -f -
+apiVersion: "k8s.cni.cncf.io/v1"
+kind: NetworkAttachmentDefinition
+metadata:
+ name: extnet2
+ annotations:
+   k8s.v1.cni.cncf.io/resourceName: ovs-cni.network.kubevirt.io/ExtNet2
+spec:
+ config: '{
+   "cniVersion": "0.3.1",
+   "type": "ovs",
+   "bridge": "ExtNet2"
+ }'
+EOF
+
+
+# Configure Multus mplswan
+sudo microk8s kubectl get -n $SDWNS network-attachment-definitions mplswan >/dev/null 2>&1 || \
+cat <<EOF | sudo microk8s kubectl create -n $SDWNS -f -
+apiVersion: "k8s.cni.cncf.io/v1"
+kind: NetworkAttachmentDefinition
+metadata:
+ name: mplswan
+ annotations:
+   k8s.v1.cni.cncf.io/resourceName: ovs-cni.network.kubevirt.io/MplsWan
+spec:
+ config: '{
+   "cniVersion": "0.3.1",
+   "type": "ovs",
+   "bridge": "MplsWan"
+ }'
+EOF
+
+echo "+ kubectl get -n $SDWNS network-attachment-definitions"
+sudo microk8s kubectl get -n $SDWNS network-attachment-definitions

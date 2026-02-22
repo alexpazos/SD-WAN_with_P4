@@ -1,0 +1,14 @@
+# Ejemplo de configuración basada en:
+# - https://github.com/openconfig/gnmic/blob/main/examples/deployments/1.single-instance/4.prometheus-output/docker-compose/prometheus/prometheus.yaml
+
+global:
+  scrape_interval:     10s 
+  evaluation_interval: 10s 
+
+scrape_configs:
+  - job_name: 'gnmic'
+    scrape_interval: 10s 
+    consul_sd_configs:
+      - server: consul-agent:8500
+        services:
+          - prometheus-prom-output

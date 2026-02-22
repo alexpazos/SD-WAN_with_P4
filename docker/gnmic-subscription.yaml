@@ -1,0 +1,92 @@
+targets:
+  isp1:
+    # gNMI target address; CLI flag `--address`
+    address: "clab-sdedge-nfv-internet-isp1:57400"
+    # gNMI target user name; CLI flag `--username`
+    username: admin
+    # gNMI target user password; CLI flag `--password`
+    password: NokiaSrl1!
+    # do not verify the target certificate when using tls; CLI flag `--skip-verify`
+    skip-verify: true
+    log: true
+    # log file location; CLI flag `--log-file`
+    log-file: /tmp/gnmic.log
+    subscriptions:
+      - isp_traffic_stats
+      - isp_interface_status
+      - isp_traffic_stats_prometheus
+
+  isp2:
+    # gNMI target address; CLI flag `--address`
+    address: "clab-sdedge-nfv-internet-isp2:57400"
+    # gNMI target user name; CLI flag `--username`
+    username: admin
+    # gNMI target user password; CLI flag `--password`
+    password: NokiaSrl1!
+    # do not verify the target certificate when using tls; CLI flag `--skip-verify`
+    skip-verify: true
+    log: true
+    # log file location; CLI flag `--log-file`
+    log-file: /tmp/gnmic.log
+    subscriptions:
+      - isp_traffic_stats
+      - isp_interface_status
+      - isp_traffic_stats_prometheus
+
+subscriptions:
+  isp_traffic_stats:
+    paths:
+       - /interface[name=ethernet-1/1]/statistics
+       - /interface[name=ethernet-1/2]/statistics
+       - /interface[name=ethernet-1/3]/statistics
+       - /interface[name=mgmt0]/statistics
+    stream-mode: sample
+    sample-interval: 5s
+    encoding: JSON_IETF
+    outputs: 
+      - kafka-output-traffic-stats
+  isp_interface_status:
+    paths:
+      - /interface[name=ethernet-1/1]/oper-state
+      - /interface[name=ethernet-1/1]/admin-state
+      - /interface[name=ethernet-1/2]/oper-state
+      - /interface[name=ethernet-1/2]/admin-state
+      - /interface[name=ethernet-1/3]/oper-state
+      - /interface[name=ethernet-1/3]/admin-state
+      - /interface[name=mgmt0]/oper-state
+      - /interface[name=mgmt0]/admin-state
+    stream-mode: on-change
+    encoding: JSON_IETF
+    outputs: 
+      - kafka-output-interface-status
+
+  isp_traffic_stats_prometheus:
+    paths:
+      - /interface[name=ethernet-1/1]/statistics
+      - /interface[name=ethernet-1/2]/statistics
+      - /interface[name=ethernet-1/3]/statistics
+      - /interface[name=mgmt0]/statistics
+    stream-mode: sample
+    sample-interval: 10s
+    encoding: JSON_IETF
+    outputs:
+      - prom-output
+
+outputs:
+  kafka-output-traffic-stats:
+    type: kafka
+    address: kafka:9092
+    topic: traffic-stats
+    # Exported msg format, json, protojson, prototext, proto, event
+    format: event
+  kafka-output-interface-status:
+    type: kafka
+    address: kafka:9092
+    topic: interface-status
+    # Exported msg format, json, protojson, prototext, proto, event
+    format: event
+  prom-output:
+    type: prometheus
+    listen: "gnmic:9804"
+    service-registration:
+      address: consul-agent:8500
