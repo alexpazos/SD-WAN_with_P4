@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
 #==============================================================================
-# Switch P4 Simple - SEDE 1
-# 2 interfaces: vxlan1 + p4s1-mpls
-# Bridging L2 simple entre ambas
+# Switch P4 SD-WAN - SEDE 1
+# Port 0: vxlan1    → BCG (AccessNet1, VNI 1, puerto 4789)
+# Port 1: p4s1-mpls → MplsWan (teléfonos L2)
+# Port 2: vxlan2    → túnel inter-sede (VNI 2, puerto 4790) → p4s1-isp → ISP
 #==============================================================================
 set -e
 
@@ -21,6 +22,9 @@ THRIFT_PORT=9091
 
 ACCESSNET_IP="10.255.0.1"
 BCG_REMOTE_IP="10.255.0.2"
+ISP_IP="10.100.1.1"
+ISP_GW="10.100.1.254"
+REMOTE_ISP_IP="10.100.2.1"
 
 print_header() {
     echo -e "\n${CYAN}══════════════════════════════════════════${NC}"
@@ -34,12 +38,13 @@ print_error()   { echo -e "${RED}[✗]${NC} $1"; exit 1; }
 
 check_prerequisites() {
     print_header "Verificando prerequisitos"
-    command -v docker &> /dev/null || print_error "Docker no instalado"
-    command -v ovs-vsctl &> /dev/null || print_error "OVS no instalado"
+    command -v docker   &>/dev/null || print_error "Docker no instalado"
+    command -v ovs-vsctl &>/dev/null || print_error "OVS no instalado"
     ovs-vsctl br-exists AccessNet1 2>/dev/null || print_error "Falta bridge: AccessNet1"
-    ovs-vsctl br-exists MplsWan 2>/dev/null    || print_error "Falta bridge: MplsWan"
+    ovs-vsctl br-exists MplsWan   2>/dev/null || print_error "Falta bridge: MplsWan"
+    ovs-vsctl br-exists ExtNet1   2>/dev/null || print_error "Falta bridge: ExtNet1"
     print_info "Docker y OVS disponibles"
-    print_info "Bridges OVS: AccessNet1, MplsWan"
+    print_info "Bridges OVS: AccessNet1, MplsWan, ExtNet1"
 }
 
 cleanup_previous() {
@@ -47,6 +52,7 @@ cleanup_previous() {
     docker rm -f ${SWITCH_NAME} 2>/dev/null || true
     ovs-vsctl --if-exists del-port AccessNet1 p4s1-accessnet1 2>/dev/null || true
     ovs-vsctl --if-exists del-port MplsWan    p4s1-mpls       2>/dev/null || true
+    ovs-vsctl --if-exists del-port ExtNet1    p4s1-isp        2>/dev/null || true
     if ! docker network ls --format '{{.Name}}' | grep -q "^${MGMT_NETWORK}$"; then
         docker network create --subnet=172.16.0.0/24 ${MGMT_NETWORK}
     fi
@@ -66,15 +72,15 @@ create_container() {
         ${P4_IMAGE} \
         bash -c 'tail -f /dev/null'
     sleep 2
-    print_info "Contenedor creado: ${SWITCH_NAME}"
+    print_info "Contenedor creado: ${SWITCH_NAME} (${MGMT_IP})"
 }
 
 install_tools() {
     print_header "Instalando herramientas"
     docker exec ${SWITCH_NAME} bash -c "
         apt-get update -qq && \
-        apt-get install -y -qq iproute2 tcpdump iputils-ping 2>/dev/null
-    " &> /dev/null
+        apt-get install -y -qq iproute2 tcpdump iputils-ping iptables arping 2>/dev/null
+    " &>/dev/null
     print_info "Herramientas instaladas"
 }
 
@@ -85,40 +91,45 @@ attach_to_ovs_bridge() {
 
     ovs-vsctl add-port ${bridge} ${port} -- set interface ${port} type=internal
     ip link set ${port} up
-    local pid=$(docker inspect -f '{{.State.Pid}}' ${SWITCH_NAME})
+    local pid
+    pid=$(docker inspect -f '{{.State.Pid}}' ${SWITCH_NAME})
     ip link set ${port} netns ${pid}
 
     if [ -n "$ip" ]; then
         docker exec ${SWITCH_NAME} ip addr add ${ip}/24 dev ${port}
-        print_info "Conectando ${port} → ${bridge} (${ip}/24)"
+        print_info "${port} → ${bridge} (${ip}/24)"
     else
-        print_info "Conectando ${port} → ${bridge} (L2, sin IP)"
+        print_info "${port} → ${bridge} (L2, sin IP)"
     fi
-
     docker exec ${SWITCH_NAME} ip link set ${port} up
 }
 
 setup_interfaces() {
-    print_header "Configurando interfaces"
+    print_header "Configurando interfaces OVS"
 
     echo -e "${BLUE}"
-    echo "┌─────────────────────────────────────────────┐"
-    echo "│  Switch P4 Sede 1 - 2 INTERFACES           │"
-    echo "├─────────────────────────────────────────────┤"
-    echo "│  Port 0: vxlan1 (VNI 1) → AccessNet1       │"
-    echo "│  Port 1: p4s1-mpls      → MplsWan (L2)     │"
-    echo "└─────────────────────────────────────────────┘"
+    echo "┌─────────────────────────────────────────────────────┐"
+    echo "│  Switch P4 SD-WAN Sede 1                           │"
+    echo "├─────────────────────────────────────────────────────┤"
+    echo "│  Port 0 (P4): vxlan1     → AccessNet1 (BCG)        │"
+    echo "│  Port 1 (P4): p4s1-mpls  → MplsWan (teléfonos)     │"
+    echo "│  Port 2 (P4): vxlan2     → túnel inter-sede ISP    │"
+    echo "│  Kernel:      p4s1-isp   → ExtNet1 (subyacente)    │"
+    echo "└─────────────────────────────────────────────────────┘"
     echo -e "${NC}\n"
 
-    # AccessNet1: CON IP (necesaria para VXLAN y comunicación con BCG)
+    # AccessNet1: CON IP (endpoint VXLAN hacia BCG)
     attach_to_ovs_bridge "p4s1-accessnet1" "AccessNet1" "${ACCESSNET_IP}"
 
-    # MplsWan: SIN IP (L2 puro, r1 y r2 en misma subred)
+    # MplsWan: SIN IP (L2 puro para teléfonos)
     attach_to_ovs_bridge "p4s1-mpls" "MplsWan" ""
+
+    # ExtNet1: CON IP (interfaz subyacente del túnel VXLAN inter-sede)
+    attach_to_ovs_bridge "p4s1-isp" "ExtNet1" "${ISP_IP}"
 }
 
-setup_vxlan() {
-    print_header "Configurando VXLAN1"
+setup_vxlan_bcg() {
+    print_header "Configurando túnel VXLAN → BCG"
 
     docker exec ${SWITCH_NAME} bash -c "
         ip link add vxlan1 type vxlan \
@@ -130,8 +141,36 @@ setup_vxlan() {
         ip link set vxlan1 up
         ip link set vxlan1 mtu 1400
     "
+    print_info "vxlan1: VNI 1, puerto 4789, ${ACCESSNET_IP} → ${BCG_REMOTE_IP}"
+}
 
-    print_info "VXLAN1 creado: VNI 1, puerto 4789 → ${BCG_REMOTE_IP}"
+setup_vxlan_intersede() {
+    print_header "Configurando túnel VXLAN inter-sede"
+
+    docker exec ${SWITCH_NAME} bash -c "
+        ip link add vxlan2 type vxlan \
+            id 2 \
+            remote ${REMOTE_ISP_IP} \
+            local ${ISP_IP} \
+            dstport 4790 \
+            dev p4s1-isp
+        ip link set vxlan2 up
+        ip link set vxlan2 mtu 1400
+    "
+    print_info "vxlan2: VNI 2, puerto 4790, ${ISP_IP} → ${REMOTE_ISP_IP}"
+}
+
+setup_routing() {
+    print_header "Configurando routing kernel"
+
+    docker exec ${SWITCH_NAME} bash -c "
+        echo 1 > /proc/sys/net/ipv4/ip_forward
+
+        # Ruta por defecto hacia ISP
+        ip route replace default via ${ISP_GW} dev p4s1-isp
+    "
+    print_info "ip_forward activado"
+    print_info "Ruta por defecto → ${ISP_GW} (p4s1-isp)"
 }
 
 start_p4_switch() {
@@ -144,10 +183,12 @@ start_p4_switch() {
     print_info "Programa P4: $P4_CONFIG"
     docker cp "$P4_CONFIG" ${SWITCH_NAME}:/tmp/p4config.json
 
+    # Port 2 es vxlan2 (túnel inter-sede, kernel encapsula/desencapsula)
     docker exec -d ${SWITCH_NAME} bash -c "
         simple_switch \
             -i 0@vxlan1 \
             -i 1@p4s1-mpls \
+            -i 2@vxlan2 \
             --thrift-port ${THRIFT_PORT} \
             --log-console \
             /tmp/p4config.json \
@@ -156,38 +197,60 @@ start_p4_switch() {
 
     sleep 3
 
-    if docker exec ${SWITCH_NAME} pgrep -x simple_switch > /dev/null; then
-        print_info "simple_switch corriendo"
-        print_info "Thrift API: puerto ${THRIFT_PORT}"
+    if docker exec ${SWITCH_NAME} pgrep -x simple_switch >/dev/null; then
+        print_info "simple_switch corriendo (thrift: ${THRIFT_PORT})"
         echo ""
-        echo -e "${CYAN}Conectar al CLI:${NC}"
-        echo "  docker exec -it ${SWITCH_NAME} simple_switch_CLI --thrift-port ${THRIFT_PORT}"
+        echo -e "${CYAN}  CLI: docker exec -it ${SWITCH_NAME} simple_switch_CLI --thrift-port ${THRIFT_PORT}${NC}"
     else
-        print_error "simple_switch no se inició"
+        print_error "simple_switch no arrancó. Ver: docker exec ${SWITCH_NAME} cat /var/log/simple_switch.log"
     fi
 }
 
+setup_p4_tables() {
+    print_header "Poblando tablas P4"
+
+    docker exec ${SWITCH_NAME} bash -c "
+        simple_switch_CLI --thrift-port ${THRIFT_PORT} << 'EOF'
+table_add routing to_mpls 10.20.1.128/25 =>
+table_add routing to_mpls 10.20.2.128/25 =>
+table_add routing to_isp  10.20.1.0/25   =>
+table_add routing to_isp  10.20.2.0/25   =>
+EOF
+    "
+
+    print_info "Tabla routing poblada:"
+    print_info "  10.20.x.128/25 → Port 1 (p4s1-mpls, teléfonos vía MPLS)"
+    print_info "  10.20.x.0/25   → Port 2 (vxlan2, hosts vía ISP)"
+}
+
 print_summary() {
-    print_header "RESUMEN - Sede 1"
-    echo "Contenedor: ${SWITCH_NAME}"
-    echo "Gestión:    ${MGMT_IP}"
+    print_header "RESUMEN SEDE 1"
+
+    echo "Contenedor : ${SWITCH_NAME}"
+    echo "Gestión    : ${MGMT_IP}"
     echo ""
     echo "Interfaces:"
-    docker exec ${SWITCH_NAME} ip -br addr 2>/dev/null | grep -v "lo\|eth0" || true
+    docker exec ${SWITCH_NAME} ip -br addr 2>/dev/null | grep -v "^lo\|^eth0" || true
     echo ""
-    echo "Mapeo P4:"
-    echo "  Port 0: vxlan1     (VXLAN VNI 1)"
-    echo "  Port 1: p4s1-mpls  (Red MPLS, L2 puro)"
+    echo "Rutas kernel:"
+    docker exec ${SWITCH_NAME} ip route 2>/dev/null || true
     echo ""
-    echo "Lógica P4: Port 0 ↔ Port 1 (bridging L2)"
+    echo "Flujo hosts (h1 → h2):"
+    echo "  h1 → BCG → vxlan1 → P4 port0"
+    echo "  P4 dst∈10.20.x.0/25 → port2 → vxlan2"
+    echo "  kernel encapsula VXLAN(VNI2) → p4s1-isp → ISP → sede2"
+    echo ""
+    echo "Flujo teléfonos (t1 → t2):"
+    echo "  t1 → BCG → vxlan1 → P4 port0"
+    echo "  P4 dst∈10.20.x.128/25 → port1 → p4s1-mpls → MplsWan → R1/R2"
 }
 
 main() {
     echo -e "${CYAN}"
-    echo "╔════════════════════════════════════════╗"
-    echo "║  SWITCH P4 SIMPLE - SEDE 1            ║"
-    echo "║  2 interfaces + Bridging L2           ║"
-    echo "╚════════════════════════════════════════╝"
+    echo "╔══════════════════════════════════════════╗"
+    echo "║   SWITCH P4 SD-WAN - SEDE 1             ║"
+    echo "║   MPLS (teléfonos) + VXLAN (hosts)      ║"
+    echo "╚══════════════════════════════════════════╝"
     echo -e "${NC}\n"
 
     check_prerequisites
@@ -195,11 +258,14 @@ main() {
     create_container
     install_tools
     setup_interfaces
-    setup_vxlan
+    setup_vxlan_bcg
+    setup_vxlan_intersede
+    setup_routing
     start_p4_switch
+    setup_p4_tables
     print_summary
 
-    echo -e "\n${GREEN}✓ SEDE 1 LISTA${NC}\n"
+    echo -e "\n${GREEN}✓ SEDE 1 DESPLEGADA Y OPERATIVA${NC}\n"
 }
 
 main

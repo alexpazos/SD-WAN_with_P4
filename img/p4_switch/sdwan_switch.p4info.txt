@@ -3,55 +3,9 @@ pkg_info {
 }
 tables {
   preamble {
-    id: 45322396
-    name: "MyIngress.mac_learning"
-    alias: "mac_learning"
-  }
-  match_fields {
-    id: 1
-    name: "hdr.ethernet.dstAddr"
-    bitwidth: 48
-    match_type: EXACT
-  }
-  action_refs {
-    id: 25883707
-  }
-  action_refs {
-    id: 22516369
-  }
-  action_refs {
-    id: 25652968
-  }
-  size: 1024
-}
-tables {
-  preamble {
-    id: 38245239
-    name: "MyIngress.port_classifier"
-    alias: "port_classifier"
-  }
-  match_fields {
-    id: 1
-    name: "standard_metadata.ingress_port"
-    bitwidth: 9
-    match_type: EXACT
-  }
-  action_refs {
-    id: 28173270
-  }
-  action_refs {
-    id: 26408515
-  }
-  action_refs {
-    id: 21257015
-  }
-  size: 16
-}
-tables {
-  preamble {
-    id: 37375156
-    name: "MyIngress.ipv4_lpm"
-    alias: "ipv4_lpm"
+    id: 34192369
+    name: "MyIngress.routing"
+    alias: "routing"
   }
   match_fields {
     id: 1
@@ -60,42 +14,15 @@ tables {
     match_type: LPM
   }
   action_refs {
-    id: 28792405
+    id: 17375835
+  }
+  action_refs {
+    id: 29795860
   }
   action_refs {
     id: 25652968
   }
-  action_refs {
-    id: 21257015
-  }
-  size: 1024
-}
-actions {
-  preamble {
-    id: 21257015
-    name: "NoAction"
-    alias: "NoAction"
-    annotations: "@noWarn(\"unused\")"
-  }
-}
-actions {
-  preamble {
-    id: 25883707
-    name: "MyIngress.l2_forward"
-    alias: "l2_forward"
-  }
-  params {
-    id: 1
-    name: "port"
-    bitwidth: 9
-  }
-}
-actions {
-  preamble {
-    id: 22516369
-    name: "MyIngress.broadcast"
-    alias: "broadcast"
-  }
+  size: 16
 }
 actions {
   preamble {
@@ -106,33 +33,23 @@ actions {
 }
 actions {
   preamble {
-    id: 28173270
-    name: "MyIngress.set_l2_mode"
-    alias: "set_l2_mode"
+    id: 17375835
+    name: "MyIngress.to_mpls"
+    alias: "to_mpls"
   }
 }
 actions {
   preamble {
-    id: 26408515
-    name: "MyIngress.set_l3_mode"
-    alias: "set_l3_mode"
+    id: 29795860
+    name: "MyIngress.to_isp"
+    alias: "to_isp"
   }
 }
 actions {
   preamble {
-    id: 28792405
-    name: "MyIngress.ipv4_forward"
-    alias: "ipv4_forward"
-  }
-  params {
-    id: 1
-    name: "dstAddr"
-    bitwidth: 48
-  }
-  params {
-    id: 2
-    name: "port"
-    bitwidth: 9
+    id: 16907252
+    name: "MyIngress.to_bcg"
+    alias: "to_bcg"
   }
 }
 type_info {

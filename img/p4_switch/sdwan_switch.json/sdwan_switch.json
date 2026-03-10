@@ -3,10 +3,7 @@
     {
       "name" : "scalars_0",
       "id" : 0,
-      "fields" : [
-        ["metadata.l2_forward", 1, false],
-        ["_padding_0", 7, false]
-      ]
+      "fields" : []
     },
     {
       "name" : "standard_metadata",
@@ -41,23 +38,8 @@
       ]
     },
     {
-      "name" : "arp_t",
-      "id" : 3,
-      "fields" : [
-        ["hwType", 16, false],
-        ["protoType", 16, false],
-        ["hwAddrLen", 8, false],
-        ["protoAddrLen", 8, false],
-        ["opcode", 16, false],
-        ["senderHwAddr", 48, false],
-        ["senderProtoAddr", 32, false],
-        ["targetHwAddr", 48, false],
-        ["targetProtoAddr", 32, false]
-      ]
-    },
-    {
       "name" : "ipv4_t",
-      "id" : 4,
+      "id" : 3,
       "fields" : [
         ["version", 4, false],
         ["ihl", 4, false],
@@ -97,15 +79,8 @@
       "pi_omit" : true
     },
     {
-      "name" : "arp",
-      "id" : 3,
-      "header_type" : "arp_t",
-      "metadata" : false,
-      "pi_omit" : true
-    },
-    {
       "name" : "ipv4",
-      "id" : 4,
+      "id" : 3,
       "header_type" : "ipv4_t",
       "metadata" : false,
       "pi_omit" : true
@@ -154,12 +129,6 @@
               "next_state" : "parse_ipv4"
             },
             {
-              "type" : "hexstr",
-              "value" : "0x0806",
-              "mask" : null,
-              "next_state" : "parse_arp"
-            },
-            {
               "type" : "default",
               "value" : null,
               "mask" : null,
@@ -174,32 +143,8 @@
           ]
         },
         {
-          "name" : "parse_arp",
-          "id" : 1,
-          "parser_ops" : [
-            {
-              "parameters" : [
-                {
-                  "type" : "regular",
-                  "value" : "arp"
-                }
-              ],
-              "op" : "extract"
-            }
-          ],
-          "transitions" : [
-            {
-              "type" : "default",
-              "value" : null,
-              "mask" : null,
-              "next_state" : null
-            }
-          ],
-          "transition_key" : []
-        },
-        {
           "name" : "parse_ipv4",
-          "id" : 2,
+          "id" : 1,
           "parser_ops" : [
             {
               "parameters" : [
@@ -231,11 +176,11 @@
       "id" : 0,
       "source_info" : {
         "filename" : "sdwan_switch.p4",
-        "line" : 271,
+        "line" : 157,
         "column" : 8,
         "source_fragment" : "MyDeparser"
       },
-      "order" : ["ethernet", "arp", "ipv4"],
+      "order" : ["ethernet", "ipv4"],
       "primitives" : []
     }
   ],
@@ -248,7 +193,7 @@
       "id" : 0,
       "source_info" : {
         "filename" : "sdwan_switch.p4",
-        "line" : 246,
+        "line" : 138,
         "column" : 8,
         "source_fragment" : "update_checksum( ..."
       },
@@ -304,26 +249,53 @@
   "learn_lists" : [],
   "actions" : [
     {
-      "name" : "NoAction",
+      "name" : "MyIngress.drop",
       "id" : 0,
       "runtime_data" : [],
-      "primitives" : []
+      "primitives" : [
+        {
+          "op" : "mark_to_drop",
+          "parameters" : [
+            {
+              "type" : "header",
+              "value" : "standard_metadata"
+            }
+          ],
+          "source_info" : {
+            "filename" : "sdwan_switch.p4",
+            "line" : 84,
+            "column" : 8,
+            "source_fragment" : "mark_to_drop(standard_metadata)"
+          }
+        }
+      ]
     },
     {
-      "name" : "NoAction",
+      "name" : "MyIngress.drop",
       "id" : 1,
       "runtime_data" : [],
-      "primitives" : []
+      "primitives" : [
+        {
+          "op" : "mark_to_drop",
+          "parameters" : [
+            {
+              "type" : "header",
+              "value" : "standard_metadata"
+            }
+          ],
+          "source_info" : {
+            "filename" : "sdwan_switch.p4",
+            "line" : 84,
+            "column" : 8,
+            "source_fragment" : "mark_to_drop(standard_metadata)"
+          }
+        }
+      ]
     },
     {
-      "name" : "MyIngress.l2_forward",
+      "name" : "MyIngress.to_mpls",
       "id" : 2,
-      "runtime_data" : [
-        {
-          "name" : "port",
-          "bitwidth" : 9
-        }
-      ],
+      "runtime_data" : [],
       "primitives" : [
         {
           "op" : "assign",
@@ -333,21 +305,21 @@
               "value" : ["standard_metadata", "egress_spec"]
             },
             {
-              "type" : "runtime_data",
-              "value" : 0
+              "type" : "hexstr",
+              "value" : "0x0001"
             }
           ],
           "source_info" : {
             "filename" : "sdwan_switch.p4",
-            "line" : 123,
+            "line" : 88,
             "column" : 8,
-            "source_fragment" : "standard_metadata.egress_spec = port"
+            "source_fragment" : "standard_metadata.egress_spec = 1"
           }
         }
       ]
     },
     {
-      "name" : "MyIngress.broadcast",
+      "name" : "MyIngress.to_mpls",
       "id" : 3,
       "runtime_data" : [],
       "primitives" : [
@@ -360,20 +332,20 @@
             },
             {
               "type" : "hexstr",
-              "value" : "0x01ff"
+              "value" : "0x0001"
             }
           ],
           "source_info" : {
             "filename" : "sdwan_switch.p4",
-            "line" : 129,
+            "line" : 88,
             "column" : 8,
-            "source_fragment" : "standard_metadata.egress_spec = 511"
+            "source_fragment" : "standard_metadata.egress_spec = 1"
           }
         }
       ]
     },
     {
-      "name" : "MyIngress.broadcast",
+      "name" : "MyIngress.to_isp",
       "id" : 4,
       "runtime_data" : [],
       "primitives" : [
@@ -386,127 +358,22 @@
             },
             {
               "type" : "hexstr",
-              "value" : "0x01ff"
+              "value" : "0x0002"
             }
           ],
           "source_info" : {
             "filename" : "sdwan_switch.p4",
-            "line" : 129,
+            "line" : 92,
             "column" : 8,
-            "source_fragment" : "standard_metadata.egress_spec = 511"
+            "source_fragment" : "standard_metadata.egress_spec = 2"
           }
         }
       ]
     },
     {
-      "name" : "MyIngress.drop",
+      "name" : "MyIngress.to_bcg",
       "id" : 5,
       "runtime_data" : [],
-      "primitives" : [
-        {
-          "op" : "mark_to_drop",
-          "parameters" : [
-            {
-              "type" : "header",
-              "value" : "standard_metadata"
-            }
-          ],
-          "source_info" : {
-            "filename" : "sdwan_switch.p4",
-            "line" : 133,
-            "column" : 8,
-            "source_fragment" : "mark_to_drop(standard_metadata)"
-          }
-        }
-      ]
-    },
-    {
-      "name" : "MyIngress.drop",
-      "id" : 6,
-      "runtime_data" : [],
-      "primitives" : [
-        {
-          "op" : "mark_to_drop",
-          "parameters" : [
-            {
-              "type" : "header",
-              "value" : "standard_metadata"
-            }
-          ],
-          "source_info" : {
-            "filename" : "sdwan_switch.p4",
-            "line" : 133,
-            "column" : 8,
-            "source_fragment" : "mark_to_drop(standard_metadata)"
-          }
-        }
-      ]
-    },
-    {
-      "name" : "MyIngress.set_l2_mode",
-      "id" : 7,
-      "runtime_data" : [],
-      "primitives" : [
-        {
-          "op" : "assign",
-          "parameters" : [
-            {
-              "type" : "field",
-              "value" : ["scalars", "metadata.l2_forward"]
-            },
-            {
-              "type" : "hexstr",
-              "value" : "0x01"
-            }
-          ],
-          "source_info" : {
-            "filename" : "sdwan_switch.p4",
-            "line" : 154,
-            "column" : 8,
-            "source_fragment" : "meta.l2_forward = 1"
-          }
-        }
-      ]
-    },
-    {
-      "name" : "MyIngress.set_l3_mode",
-      "id" : 8,
-      "runtime_data" : [],
-      "primitives" : [
-        {
-          "op" : "assign",
-          "parameters" : [
-            {
-              "type" : "field",
-              "value" : ["scalars", "metadata.l2_forward"]
-            },
-            {
-              "type" : "hexstr",
-              "value" : "0x00"
-            }
-          ],
-          "source_info" : {
-            "filename" : "sdwan_switch.p4",
-            "line" : 158,
-            "column" : 8,
-            "source_fragment" : "meta.l2_forward = 0"
-          }
-        }
-      ]
-    },
-    {
-      "name" : "MyIngress.ipv4_forward",
-      "id" : 9,
-      "runtime_data" : [
-        {
-          "name" : "dstAddr",
-          "bitwidth" : 48
-        },
-        {
-          "name" : "port",
-          "bitwidth" : 9
-        }
-      ],
       "primitives" : [
         {
           "op" : "assign",
@@ -516,95 +383,41 @@
               "value" : ["standard_metadata", "egress_spec"]
             },
             {
-              "type" : "runtime_data",
-              "value" : 1
+              "type" : "hexstr",
+              "value" : "0x0000"
             }
           ],
           "source_info" : {
             "filename" : "sdwan_switch.p4",
-            "line" : 179,
+            "line" : 96,
             "column" : 8,
-            "source_fragment" : "standard_metadata.egress_spec = port"
+            "source_fragment" : "standard_metadata.egress_spec = 0"
           }
-        },
+        }
+      ]
+    },
+    {
+      "name" : "MyIngress.to_bcg",
+      "id" : 6,
+      "runtime_data" : [],
+      "primitives" : [
         {
           "op" : "assign",
           "parameters" : [
             {
               "type" : "field",
-              "value" : ["ethernet", "srcAddr"]
+              "value" : ["standard_metadata", "egress_spec"]
             },
             {
-              "type" : "field",
-              "value" : ["ethernet", "dstAddr"]
+              "type" : "hexstr",
+              "value" : "0x0000"
             }
           ],
           "source_info" : {
             "filename" : "sdwan_switch.p4",
-            "line" : 180,
+            "line" : 96,
             "column" : 8,
-            "source_fragment" : "hdr.ethernet.srcAddr = hdr.ethernet.dstAddr"
-          }
-        },
-        {
-          "op" : "assign",
-          "parameters" : [
-            {
-              "type" : "field",
-              "value" : ["ethernet", "dstAddr"]
-            },
-            {
-              "type" : "runtime_data",
-              "value" : 0
-            }
-          ],
-          "source_info" : {
-            "filename" : "sdwan_switch.p4",
-            "line" : 181,
-            "column" : 8,
-            "source_fragment" : "hdr.ethernet.dstAddr = dstAddr"
-          }
-        },
-        {
-          "op" : "assign",
-          "parameters" : [
-            {
-              "type" : "field",
-              "value" : ["ipv4", "ttl"]
-            },
-            {
-              "type" : "expression",
-              "value" : {
-                "type" : "expression",
-                "value" : {
-                  "op" : "&",
-                  "left" : {
-                    "type" : "expression",
-                    "value" : {
-                      "op" : "+",
-                      "left" : {
-                        "type" : "field",
-                        "value" : ["ipv4", "ttl"]
-                      },
-                      "right" : {
-                        "type" : "hexstr",
-                        "value" : "0xff"
-                      }
-                    }
-                  },
-                  "right" : {
-                    "type" : "hexstr",
-                    "value" : "0xff"
-                  }
-                }
-              }
-            }
-          ],
-          "source_info" : {
-            "filename" : "sdwan_switch.p4",
-            "line" : 182,
-            "column" : 8,
-            "source_fragment" : "hdr.ipv4.ttl = hdr.ipv4.ttl - 1"
+            "source_fragment" : "standard_metadata.egress_spec = 0"
           }
         }
       ]
@@ -616,124 +429,20 @@
       "id" : 0,
       "source_info" : {
         "filename" : "sdwan_switch.p4",
-        "line" : 107,
+        "line" : 79,
         "column" : 8,
         "source_fragment" : "MyIngress"
       },
-      "init_table" : "MyIngress.port_classifier",
+      "init_table" : "node_2",
       "tables" : [
         {
-          "name" : "MyIngress.port_classifier",
+          "name" : "MyIngress.routing",
           "id" : 0,
           "source_info" : {
             "filename" : "sdwan_switch.p4",
-            "line" : 161,
+            "line" : 99,
             "column" : 10,
-            "source_fragment" : "port_classifier"
-          },
-          "key" : [
-            {
-              "match_type" : "exact",
-              "name" : "standard_metadata.ingress_port",
-              "target" : ["standard_metadata", "ingress_port"],
-              "mask" : null
-            }
-          ],
-          "match_type" : "exact",
-          "type" : "simple",
-          "max_size" : 16,
-          "with_counters" : false,
-          "support_timeout" : false,
-          "direct_meters" : null,
-          "action_ids" : [7, 8, 0],
-          "actions" : ["MyIngress.set_l2_mode", "MyIngress.set_l3_mode", "NoAction"],
-          "base_default_next" : "node_3",
-          "next_tables" : {
-            "MyIngress.set_l2_mode" : "node_3",
-            "MyIngress.set_l3_mode" : "node_3",
-            "NoAction" : "node_3"
-          },
-          "default_entry" : {
-            "action_id" : 7,
-            "action_const" : false,
-            "action_data" : [],
-            "action_entry_const" : false
-          }
-        },
-        {
-          "name" : "MyIngress.mac_learning",
-          "id" : 1,
-          "source_info" : {
-            "filename" : "sdwan_switch.p4",
-            "line" : 136,
-            "column" : 10,
-            "source_fragment" : "mac_learning"
-          },
-          "key" : [
-            {
-              "match_type" : "exact",
-              "name" : "hdr.ethernet.dstAddr",
-              "target" : ["ethernet", "dstAddr"],
-              "mask" : null
-            }
-          ],
-          "match_type" : "exact",
-          "type" : "simple",
-          "max_size" : 1024,
-          "with_counters" : false,
-          "support_timeout" : false,
-          "direct_meters" : null,
-          "action_ids" : [2, 3, 5],
-          "actions" : ["MyIngress.l2_forward", "MyIngress.broadcast", "MyIngress.drop"],
-          "base_default_next" : null,
-          "next_tables" : {
-            "__HIT__" : null,
-            "__MISS__" : "tbl_broadcast"
-          },
-          "default_entry" : {
-            "action_id" : 3,
-            "action_const" : false,
-            "action_data" : [],
-            "action_entry_const" : false
-          }
-        },
-        {
-          "name" : "tbl_broadcast",
-          "id" : 2,
-          "source_info" : {
-            "filename" : "sdwan_switch.p4",
-            "line" : 217,
-            "column" : 24,
-            "source_fragment" : "broadcast()"
-          },
-          "key" : [],
-          "match_type" : "exact",
-          "type" : "simple",
-          "max_size" : 1024,
-          "with_counters" : false,
-          "support_timeout" : false,
-          "direct_meters" : null,
-          "action_ids" : [4],
-          "actions" : ["MyIngress.broadcast"],
-          "base_default_next" : null,
-          "next_tables" : {
-            "MyIngress.broadcast" : null
-          },
-          "default_entry" : {
-            "action_id" : 4,
-            "action_const" : true,
-            "action_data" : [],
-            "action_entry_const" : true
-          }
-        },
-        {
-          "name" : "MyIngress.ipv4_lpm",
-          "id" : 3,
-          "source_info" : {
-            "filename" : "sdwan_switch.p4",
-            "line" : 185,
-            "column" : 10,
-            "source_fragment" : "ipv4_lpm"
+            "source_fragment" : "routing"
           },
           "key" : [
             {
@@ -745,59 +454,152 @@
           ],
           "match_type" : "lpm",
           "type" : "simple",
+          "max_size" : 16,
+          "with_counters" : false,
+          "support_timeout" : false,
+          "direct_meters" : null,
+          "action_ids" : [2, 4, 0],
+          "actions" : ["MyIngress.to_mpls", "MyIngress.to_isp", "MyIngress.drop"],
+          "base_default_next" : null,
+          "next_tables" : {
+            "MyIngress.to_mpls" : null,
+            "MyIngress.to_isp" : null,
+            "MyIngress.drop" : null
+          },
+          "default_entry" : {
+            "action_id" : 0,
+            "action_const" : false,
+            "action_data" : [],
+            "action_entry_const" : false
+          }
+        },
+        {
+          "name" : "tbl_to_mpls",
+          "id" : 1,
+          "source_info" : {
+            "filename" : "sdwan_switch.p4",
+            "line" : 118,
+            "column" : 16,
+            "source_fragment" : "to_mpls()"
+          },
+          "key" : [],
+          "match_type" : "exact",
+          "type" : "simple",
           "max_size" : 1024,
           "with_counters" : false,
           "support_timeout" : false,
           "direct_meters" : null,
-          "action_ids" : [9, 6, 1],
-          "actions" : ["MyIngress.ipv4_forward", "MyIngress.drop", "NoAction"],
+          "action_ids" : [3],
+          "actions" : ["MyIngress.to_mpls"],
           "base_default_next" : null,
           "next_tables" : {
-            "MyIngress.ipv4_forward" : null,
-            "MyIngress.drop" : null,
-            "NoAction" : null
+            "MyIngress.to_mpls" : null
+          },
+          "default_entry" : {
+            "action_id" : 3,
+            "action_const" : true,
+            "action_data" : [],
+            "action_entry_const" : true
+          }
+        },
+        {
+          "name" : "tbl_to_bcg",
+          "id" : 2,
+          "source_info" : {
+            "filename" : "sdwan_switch.p4",
+            "line" : 121,
+            "column" : 12,
+            "source_fragment" : "to_bcg()"
+          },
+          "key" : [],
+          "match_type" : "exact",
+          "type" : "simple",
+          "max_size" : 1024,
+          "with_counters" : false,
+          "support_timeout" : false,
+          "direct_meters" : null,
+          "action_ids" : [5],
+          "actions" : ["MyIngress.to_bcg"],
+          "base_default_next" : null,
+          "next_tables" : {
+            "MyIngress.to_bcg" : null
+          },
+          "default_entry" : {
+            "action_id" : 5,
+            "action_const" : true,
+            "action_data" : [],
+            "action_entry_const" : true
+          }
+        },
+        {
+          "name" : "tbl_to_bcg_0",
+          "id" : 3,
+          "source_info" : {
+            "filename" : "sdwan_switch.p4",
+            "line" : 123,
+            "column" : 12,
+            "source_fragment" : "to_bcg()"
+          },
+          "key" : [],
+          "match_type" : "exact",
+          "type" : "simple",
+          "max_size" : 1024,
+          "with_counters" : false,
+          "support_timeout" : false,
+          "direct_meters" : null,
+          "action_ids" : [6],
+          "actions" : ["MyIngress.to_bcg"],
+          "base_default_next" : null,
+          "next_tables" : {
+            "MyIngress.to_bcg" : null
           },
           "default_entry" : {
             "action_id" : 6,
-            "action_const" : false,
+            "action_const" : true,
             "action_data" : [],
-            "action_entry_const" : false
+            "action_entry_const" : true
+          }
+        },
+        {
+          "name" : "tbl_drop",
+          "id" : 4,
+          "source_info" : {
+            "filename" : "sdwan_switch.p4",
+            "line" : 125,
+            "column" : 12,
+            "source_fragment" : "drop()"
+          },
+          "key" : [],
+          "match_type" : "exact",
+          "type" : "simple",
+          "max_size" : 1024,
+          "with_counters" : false,
+          "support_timeout" : false,
+          "direct_meters" : null,
+          "action_ids" : [1],
+          "actions" : ["MyIngress.drop"],
+          "base_default_next" : null,
+          "next_tables" : {
+            "MyIngress.drop" : null
+          },
+          "default_entry" : {
+            "action_id" : 1,
+            "action_const" : true,
+            "action_data" : [],
+            "action_entry_const" : true
           }
         }
       ],
       "action_profiles" : [],
       "conditionals" : [
         {
-          "name" : "node_3",
+          "name" : "node_2",
           "id" : 0,
           "source_info" : {
             "filename" : "sdwan_switch.p4",
-            "line" : 206,
+            "line" : 113,
             "column" : 12,
-            "source_fragment" : "hdr.ethernet.isValid()"
-          },
-          "expression" : {
-            "type" : "expression",
-            "value" : {
-              "op" : "d2b",
-              "left" : null,
-              "right" : {
-                "type" : "field",
-                "value" : ["ethernet", "$valid$"]
-              }
-            }
-          },
-          "false_next" : null,
-          "true_next" : "node_4"
-        },
-        {
-          "name" : "node_4",
-          "id" : 1,
-          "source_info" : {
-            "filename" : "sdwan_switch.p4",
-            "line" : 209,
-            "column" : 16,
-            "source_fragment" : "meta.l2_forward == 1"
+            "source_fragment" : "standard_metadata.ingress_port == 0"
           },
           "expression" : {
             "type" : "expression",
@@ -805,64 +607,24 @@
               "op" : "==",
               "left" : {
                 "type" : "field",
-                "value" : ["scalars", "metadata.l2_forward"]
+                "value" : ["standard_metadata", "ingress_port"]
               },
               "right" : {
                 "type" : "hexstr",
-                "value" : "0x01"
+                "value" : "0x0000"
               }
             }
           },
-          "true_next" : "node_5",
-          "false_next" : "node_8"
+          "true_next" : "node_3",
+          "false_next" : "node_6"
         },
         {
-          "name" : "node_5",
-          "id" : 2,
+          "name" : "node_3",
+          "id" : 1,
           "source_info" : {
             "filename" : "sdwan_switch.p4",
-            "line" : 212,
-            "column" : 20,
-            "source_fragment" : "hdr.arp.isValid() || hdr.ipv4.isValid()"
-          },
-          "expression" : {
-            "type" : "expression",
-            "value" : {
-              "op" : "or",
-              "left" : {
-                "type" : "expression",
-                "value" : {
-                  "op" : "d2b",
-                  "left" : null,
-                  "right" : {
-                    "type" : "field",
-                    "value" : ["arp", "$valid$"]
-                  }
-                }
-              },
-              "right" : {
-                "type" : "expression",
-                "value" : {
-                  "op" : "d2b",
-                  "left" : null,
-                  "right" : {
-                    "type" : "field",
-                    "value" : ["ipv4", "$valid$"]
-                  }
-                }
-              }
-            }
-          },
-          "false_next" : null,
-          "true_next" : "MyIngress.mac_learning"
-        },
-        {
-          "name" : "node_8",
-          "id" : 3,
-          "source_info" : {
-            "filename" : "sdwan_switch.p4",
-            "line" : 223,
-            "column" : 21,
+            "line" : 114,
+            "column" : 16,
             "source_fragment" : "hdr.ipv4.isValid()"
           },
           "expression" : {
@@ -876,8 +638,60 @@
               }
             }
           },
-          "false_next" : null,
-          "true_next" : "MyIngress.ipv4_lpm"
+          "true_next" : "MyIngress.routing",
+          "false_next" : "tbl_to_mpls"
+        },
+        {
+          "name" : "node_6",
+          "id" : 2,
+          "source_info" : {
+            "filename" : "sdwan_switch.p4",
+            "line" : 120,
+            "column" : 19,
+            "source_fragment" : "standard_metadata.ingress_port == 1"
+          },
+          "expression" : {
+            "type" : "expression",
+            "value" : {
+              "op" : "==",
+              "left" : {
+                "type" : "field",
+                "value" : ["standard_metadata", "ingress_port"]
+              },
+              "right" : {
+                "type" : "hexstr",
+                "value" : "0x0001"
+              }
+            }
+          },
+          "true_next" : "tbl_to_bcg",
+          "false_next" : "node_8"
+        },
+        {
+          "name" : "node_8",
+          "id" : 3,
+          "source_info" : {
+            "filename" : "sdwan_switch.p4",
+            "line" : 122,
+            "column" : 19,
+            "source_fragment" : "standard_metadata.ingress_port == 2"
+          },
+          "expression" : {
+            "type" : "expression",
+            "value" : {
+              "op" : "==",
+              "left" : {
+                "type" : "field",
+                "value" : ["standard_metadata", "ingress_port"]
+              },
+              "right" : {
+                "type" : "hexstr",
+                "value" : "0x0002"
+              }
+            }
+          },
+          "true_next" : "tbl_to_bcg_0",
+          "false_next" : "tbl_drop"
         }
       ]
     },
@@ -886,7 +700,7 @@
       "id" : 1,
       "source_info" : {
         "filename" : "sdwan_switch.p4",
-        "line" : 234,
+        "line" : 130,
         "column" : 8,
         "source_fragment" : "MyEgress"
       },
@@ -902,7 +716,7 @@
       "id" : 0,
       "source_info" : {
         "filename" : "sdwan_switch.p4",
-        "line" : 246,
+        "line" : 138,
         "column" : 8,
         "source_fragment" : "update_checksum( ..."
       },
