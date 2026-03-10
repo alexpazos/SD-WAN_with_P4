@@ -212,9 +212,7 @@ setup_p4_tables() {
     docker exec ${SWITCH_NAME} bash -c "
         simple_switch_CLI --thrift-port ${THRIFT_PORT} << 'EOF'
 table_add routing to_mpls 10.20.1.128/25 =>
-table_add routing to_mpls 10.20.2.128/25 =>
 table_add routing to_isp  10.20.1.0/25   =>
-table_add routing to_isp  10.20.2.0/25   =>
 EOF
     "
 
