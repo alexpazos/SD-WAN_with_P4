@@ -20,6 +20,9 @@ tables {
     id: 29795860
   }
   action_refs {
+    id: 27948650
+  }
+  action_refs {
     id: 25652968
   }
   size: 16
@@ -50,6 +53,13 @@ actions {
     id: 16907252
     name: "MyIngress.to_bcg"
     alias: "to_bcg"
+  }
+}
+actions {
+  preamble {
+    id: 27948650
+    name: "MyIngress.to_nat"
+    alias: "to_nat"
   }
 }
 type_info {

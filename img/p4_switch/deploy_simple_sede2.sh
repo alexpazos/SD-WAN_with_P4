@@ -1,9 +1,10 @@
 #!/usr/bin/env bash
 #==============================================================================
 # Switch P4 SD-WAN - SEDE 2
-# Port 0: vxlan1    → BCG (AccessNet2, VNI 1, puerto 4789)
-# Port 1: p4s2-mpls → MplsWan (teléfonos L2)
-# Port 2: vxlan2    → túnel inter-sede (VNI 2, puerto 4790) → p4s2-isp → ISP
+# Port 0: vxlan1         → BCG (AccessNet2, VNI 1, puerto 4789)
+# Port 1: p4s2-mpls      → MplsWan (teléfonos L2)
+# Port 2: vxlan2         → túnel inter-sede (VNI 2, puerto 4790) → p4s2-isp
+# Port 3: p4s2-nat-inner → kernel NAT (MASQUERADE) → p4s2-isp → ISP/internet
 #==============================================================================
 set -e
 
@@ -25,6 +26,10 @@ BCG_REMOTE_IP="10.255.0.2"
 ISP_IP="10.100.2.1"
 ISP_GW="10.100.2.254"
 REMOTE_ISP_IP="10.100.1.1"
+
+# Subredes de clientes: el retorno NAT las necesita para volver a P4
+CLIENT_SUBNET_SEDE1="10.20.1.0/24"
+CLIENT_SUBNET_SEDE2="10.20.2.0/24"
 
 print_header() {
     echo -e "\n${CYAN}══════════════════════════════════════════${NC}"
@@ -108,14 +113,15 @@ setup_interfaces() {
     print_header "Configurando interfaces OVS"
 
     echo -e "${BLUE}"
-    echo "┌─────────────────────────────────────────────────────┐"
-    echo "│  Switch P4 SD-WAN Sede 2                           │"
-    echo "├─────────────────────────────────────────────────────┤"
-    echo "│  Port 0 (P4): vxlan1     → AccessNet2 (BCG)        │"
-    echo "│  Port 1 (P4): p4s2-mpls  → MplsWan (teléfonos)     │"
-    echo "│  Port 2 (P4): vxlan2     → túnel inter-sede ISP    │"
-    echo "│  Kernel:      p4s2-isp   → ExtNet2 (subyacente)    │"
-    echo "└─────────────────────────────────────────────────────┘"
+    echo "┌────────────────────────────────────────────────────────────┐"
+    echo "│  Switch P4 SD-WAN Sede 2                                  │"
+    echo "├────────────────────────────────────────────────────────────┤"
+    echo "│  Port 0 (P4): vxlan1        → AccessNet2 (BCG)            │"
+    echo "│  Port 1 (P4): p4s2-mpls     → MplsWan (teléfonos)         │"
+    echo "│  Port 2 (P4): vxlan2        → túnel inter-sede            │"
+    echo "│  Port 3 (P4): p4s2-nat-inner→ kernel NAT → internet       │"
+    echo "│  Kernel:      p4s2-isp      → ExtNet2 (vxlan2 + NAT)      │"
+    echo "└────────────────────────────────────────────────────────────┘"
     echo -e "${NC}\n"
 
     # AccessNet2: CON IP (endpoint VXLAN hacia BCG)
@@ -124,7 +130,7 @@ setup_interfaces() {
     # MplsWan: SIN IP (L2 puro para teléfonos)
     attach_to_ovs_bridge "p4s2-mpls" "MplsWan" ""
 
-    # ExtNet2: CON IP (interfaz subyacente del túnel VXLAN inter-sede)
+    # ExtNet2: CON IP (interfaz subyacente de vxlan2 Y salida NAT internet)
     attach_to_ovs_bridge "p4s2-isp" "ExtNet2" "${ISP_IP}"
 }
 
@@ -160,17 +166,55 @@ setup_vxlan_intersede() {
     print_info "vxlan2: VNI 2, puerto 4790, ${ISP_IP} → ${REMOTE_ISP_IP}"
 }
 
+setup_nat_iface() {
+    print_header "Configurando interfaz virtual NAT (port 3)"
+
+    docker exec ${SWITCH_NAME} bash -c "
+        ip link add p4s2-nat-inner type veth peer name p4s2-nat-outer
+        ip link set p4s2-nat-inner up
+        ip link set p4s2-nat-outer up
+    "
+    print_info "Par veth NAT creado:"
+    print_info "  p4s2-nat-inner → P4 port 3"
+    print_info "  p4s2-nat-outer → kernel (MASQUERADE → p4s2-isp)"
+}
+
 setup_routing() {
     print_header "Configurando routing kernel"
 
     docker exec ${SWITCH_NAME} bash -c "
         echo 1 > /proc/sys/net/ipv4/ip_forward
 
-        # Ruta por defecto hacia ISP
+        # Ruta por defecto: tráfico NATado sale por p4s2-isp hacia ISP
         ip route replace default via ${ISP_GW} dev p4s2-isp
+
+        # Rutas de retorno NAT:
+        # Cuando internet responde, conntrack deshace el NAT (dst→10.20.x.x)
+        # y el kernel necesita saber cómo llegar a esas IPs: por p4s2-nat-outer → P4
+        ip route add ${CLIENT_SUBNET_SEDE1} dev p4s2-nat-outer
+        ip route add ${CLIENT_SUBNET_SEDE2} dev p4s2-nat-outer
     "
     print_info "ip_forward activado"
     print_info "Ruta por defecto → ${ISP_GW} (p4s2-isp)"
+    print_info "Retorno NAT ${CLIENT_SUBNET_SEDE1} → p4s2-nat-outer → P4 port3"
+    print_info "Retorno NAT ${CLIENT_SUBNET_SEDE2} → p4s2-nat-outer → P4 port3"
+}
+
+setup_nat_rules() {
+    print_header "Configurando NAT (iptables MASQUERADE)"
+
+    docker exec ${SWITCH_NAME} bash -c "
+        # MASQUERADE: cuando un paquete sale por p4s2-isp,
+        # sustituye la IP origen (10.20.x.x) por ${ISP_IP}
+        # conntrack guarda el mapeo para el retorno
+        iptables -t nat -A POSTROUTING -o p4s2-isp -j MASQUERADE
+
+        # Permitir reenvío entre el par veth NAT y p4s2-isp
+        iptables -A FORWARD -i p4s2-nat-outer -o p4s2-isp      -j ACCEPT
+        iptables -A FORWARD -i p4s2-isp       -o p4s2-nat-outer -j ACCEPT
+    "
+    print_info "MASQUERADE activo: salida por p4s2-isp → src sustituida por ${ISP_IP}"
+    print_info "FORWARD habilitado: p4s2-nat-outer ↔ p4s2-isp"
 }
 
 start_p4_switch() {
@@ -183,12 +227,12 @@ start_p4_switch() {
     print_info "Programa P4: $P4_CONFIG"
     docker cp "$P4_CONFIG" ${SWITCH_NAME}:/tmp/p4config.json
 
-    # Port 2 es vxlan2 (túnel inter-sede, kernel encapsula/desencapsula)
     docker exec -d ${SWITCH_NAME} bash -c "
         simple_switch \
             -i 0@vxlan1 \
             -i 1@p4s2-mpls \
             -i 2@vxlan2 \
+            -i 3@p4s2-nat-inner \
             --thrift-port ${THRIFT_PORT} \
             --log-console \
             /tmp/p4config.json \
@@ -209,6 +253,9 @@ start_p4_switch() {
 setup_p4_tables() {
     print_header "Poblando tablas P4"
 
+    # Solo rutas hacia redes REMOTAS (sede1)
+    # Tráfico local sede2 llega por port 0 → to_bcg (port 0 no pasa por routing)
+    # Tráfico internet no tiene match → default_action to_nat → port 3
     docker exec ${SWITCH_NAME} bash -c "
         simple_switch_CLI --thrift-port ${THRIFT_PORT} << 'EOF'
 table_add routing to_mpls 10.20.1.128/25 =>
@@ -216,9 +263,10 @@ table_add routing to_isp  10.20.1.0/25   =>
 EOF
     "
 
-    print_info "Tabla routing poblada:"
-    print_info "  10.20.x.128/25 → Port 1 (p4s2-mpls, teléfonos vía MPLS)"
-    print_info "  10.20.x.0/25   → Port 2 (vxlan2, hosts vía ISP)"
+    print_info "Tabla routing poblada (sede2 → solo redes remotas):"
+    print_info "  10.20.1.128/25 → Port 1 (p4s2-mpls, teléfonos sede1 vía MPLS)"
+    print_info "  10.20.1.0/25   → Port 2 (vxlan2, hosts sede1 vía ISP)"
+    print_info "  default        → Port 3 (p4s2-nat-inner, internet vía NAT)"
 }
 
 print_summary() {
@@ -233,22 +281,37 @@ print_summary() {
     echo "Rutas kernel:"
     docker exec ${SWITCH_NAME} ip route 2>/dev/null || true
     echo ""
-    echo "Flujo hosts (h2 → h1):"
-    echo "  h2 → BCG → vxlan1 → P4 port0"
-    echo "  P4 dst∈10.20.x.0/25 → port2 → vxlan2"
-    echo "  kernel encapsula VXLAN(VNI2) → p4s2-isp → ISP → sede1"
+    echo "NAT (iptables):"
+    docker exec ${SWITCH_NAME} iptables -t nat -L POSTROUTING -n -v 2>/dev/null || true
     echo ""
-    echo "Flujo teléfonos (t2 → t1):"
-    echo "  t2 → BCG → vxlan1 → P4 port0"
-    echo "  P4 dst∈10.20.x.128/25 → port1 → p4s2-mpls → MplsWan → R1/R2"
+    echo "Flujos de tráfico:"
+    echo ""
+    echo "  [INTER-SEDE h2→h1]"
+    echo "  BCG→vxlan1→P4(port0) dst∈10.20.1.0/25 → to_isp → port2(vxlan2)"
+    echo "  kernel encapsula VNI2:4790 src=${ISP_IP} dst=${REMOTE_ISP_IP}"
+    echo "  p4s2-isp → ExtNet2 → ISP → sede1"
+    echo ""
+    echo "  [INTERNET h2→8.8.8.8]"
+    echo "  BCG→vxlan1→P4(port0) dst=8.8.8.8 → default to_nat → port3"
+    echo "  p4s2-nat-inner → p4s2-nat-outer → MASQUERADE src→${ISP_IP}"
+    echo "  p4s2-isp → ExtNet2 → ISP → internet"
+    echo ""
+    echo "  [RETORNO INTERNET 8.8.8.8→h2]"
+    echo "  ISP→p4s2-isp → conntrack deshace NAT dst→10.20.2.2"
+    echo "  ruta 10.20.2.0/24 dev p4s2-nat-outer → P4(port3) → to_bcg → port0"
+    echo "  vxlan1 → BCG → h2"
+    echo ""
+    echo "  [TELEFONOS t2→t1]"
+    echo "  BCG→vxlan1→P4(port0) dst∈10.20.1.128/25 → to_mpls → port1"
+    echo "  p4s2-mpls → MplsWan → R1/R2 → sede1"
 }
 
 main() {
     echo -e "${CYAN}"
-    echo "╔══════════════════════════════════════════╗"
-    echo "║   SWITCH P4 SD-WAN - SEDE 2             ║"
-    echo "║   MPLS (teléfonos) + VXLAN (hosts)      ║"
-    echo "╚══════════════════════════════════════════╝"
+    echo "╔════════════════════════════════════════════╗"
+    echo "║   SWITCH P4 SD-WAN - SEDE 2               ║"
+    echo "║   MPLS + VXLAN inter-sede + NAT internet   ║"
+    echo "╚════════════════════════════════════════════╝"
     echo -e "${NC}\n"
 
     check_prerequisites
@@ -258,7 +321,9 @@ main() {
     setup_interfaces
     setup_vxlan_bcg
     setup_vxlan_intersede
+    setup_nat_iface
     setup_routing
+    setup_nat_rules
     start_p4_switch
     setup_p4_tables
     print_summary

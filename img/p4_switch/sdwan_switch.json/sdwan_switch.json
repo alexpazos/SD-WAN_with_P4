@@ -176,7 +176,7 @@
       "id" : 0,
       "source_info" : {
         "filename" : "sdwan_switch.p4",
-        "line" : 157,
+        "line" : 178,
         "column" : 8,
         "source_fragment" : "MyDeparser"
       },
@@ -193,7 +193,7 @@
       "id" : 0,
       "source_info" : {
         "filename" : "sdwan_switch.p4",
-        "line" : 138,
+        "line" : 159,
         "column" : 8,
         "source_fragment" : "update_checksum( ..."
       },
@@ -263,7 +263,7 @@
           ],
           "source_info" : {
             "filename" : "sdwan_switch.p4",
-            "line" : 84,
+            "line" : 89,
             "column" : 8,
             "source_fragment" : "mark_to_drop(standard_metadata)"
           }
@@ -285,7 +285,7 @@
           ],
           "source_info" : {
             "filename" : "sdwan_switch.p4",
-            "line" : 84,
+            "line" : 89,
             "column" : 8,
             "source_fragment" : "mark_to_drop(standard_metadata)"
           }
@@ -311,7 +311,7 @@
           ],
           "source_info" : {
             "filename" : "sdwan_switch.p4",
-            "line" : 88,
+            "line" : 94,
             "column" : 8,
             "source_fragment" : "standard_metadata.egress_spec = 1"
           }
@@ -337,7 +337,7 @@
           ],
           "source_info" : {
             "filename" : "sdwan_switch.p4",
-            "line" : 88,
+            "line" : 94,
             "column" : 8,
             "source_fragment" : "standard_metadata.egress_spec = 1"
           }
@@ -363,7 +363,7 @@
           ],
           "source_info" : {
             "filename" : "sdwan_switch.p4",
-            "line" : 92,
+            "line" : 99,
             "column" : 8,
             "source_fragment" : "standard_metadata.egress_spec = 2"
           }
@@ -389,7 +389,7 @@
           ],
           "source_info" : {
             "filename" : "sdwan_switch.p4",
-            "line" : 96,
+            "line" : 104,
             "column" : 8,
             "source_fragment" : "standard_metadata.egress_spec = 0"
           }
@@ -415,9 +415,61 @@
           ],
           "source_info" : {
             "filename" : "sdwan_switch.p4",
-            "line" : 96,
+            "line" : 104,
             "column" : 8,
             "source_fragment" : "standard_metadata.egress_spec = 0"
+          }
+        }
+      ]
+    },
+    {
+      "name" : "MyIngress.to_bcg",
+      "id" : 7,
+      "runtime_data" : [],
+      "primitives" : [
+        {
+          "op" : "assign",
+          "parameters" : [
+            {
+              "type" : "field",
+              "value" : ["standard_metadata", "egress_spec"]
+            },
+            {
+              "type" : "hexstr",
+              "value" : "0x0000"
+            }
+          ],
+          "source_info" : {
+            "filename" : "sdwan_switch.p4",
+            "line" : 104,
+            "column" : 8,
+            "source_fragment" : "standard_metadata.egress_spec = 0"
+          }
+        }
+      ]
+    },
+    {
+      "name" : "MyIngress.to_nat",
+      "id" : 8,
+      "runtime_data" : [],
+      "primitives" : [
+        {
+          "op" : "assign",
+          "parameters" : [
+            {
+              "type" : "field",
+              "value" : ["standard_metadata", "egress_spec"]
+            },
+            {
+              "type" : "hexstr",
+              "value" : "0x0003"
+            }
+          ],
+          "source_info" : {
+            "filename" : "sdwan_switch.p4",
+            "line" : 109,
+            "column" : 8,
+            "source_fragment" : "standard_metadata.egress_spec = 3"
           }
         }
       ]
@@ -429,7 +481,7 @@
       "id" : 0,
       "source_info" : {
         "filename" : "sdwan_switch.p4",
-        "line" : 79,
+        "line" : 84,
         "column" : 8,
         "source_fragment" : "MyIngress"
       },
@@ -440,7 +492,7 @@
           "id" : 0,
           "source_info" : {
             "filename" : "sdwan_switch.p4",
-            "line" : 99,
+            "line" : 112,
             "column" : 10,
             "source_fragment" : "routing"
           },
@@ -458,16 +510,17 @@
           "with_counters" : false,
           "support_timeout" : false,
           "direct_meters" : null,
-          "action_ids" : [2, 4, 0],
-          "actions" : ["MyIngress.to_mpls", "MyIngress.to_isp", "MyIngress.drop"],
+          "action_ids" : [2, 4, 8, 0],
+          "actions" : ["MyIngress.to_mpls", "MyIngress.to_isp", "MyIngress.to_nat", "MyIngress.drop"],
           "base_default_next" : null,
           "next_tables" : {
             "MyIngress.to_mpls" : null,
             "MyIngress.to_isp" : null,
+            "MyIngress.to_nat" : null,
             "MyIngress.drop" : null
           },
           "default_entry" : {
-            "action_id" : 0,
+            "action_id" : 8,
             "action_const" : false,
             "action_data" : [],
             "action_entry_const" : false
@@ -478,7 +531,7 @@
           "id" : 1,
           "source_info" : {
             "filename" : "sdwan_switch.p4",
-            "line" : 118,
+            "line" : 134,
             "column" : 16,
             "source_fragment" : "to_mpls()"
           },
@@ -507,7 +560,7 @@
           "id" : 2,
           "source_info" : {
             "filename" : "sdwan_switch.p4",
-            "line" : 121,
+            "line" : 138,
             "column" : 12,
             "source_fragment" : "to_bcg()"
           },
@@ -536,7 +589,7 @@
           "id" : 3,
           "source_info" : {
             "filename" : "sdwan_switch.p4",
-            "line" : 123,
+            "line" : 141,
             "column" : 12,
             "source_fragment" : "to_bcg()"
           },
@@ -561,11 +614,40 @@
           }
         },
         {
-          "name" : "tbl_drop",
+          "name" : "tbl_to_bcg_1",
           "id" : 4,
           "source_info" : {
             "filename" : "sdwan_switch.p4",
-            "line" : 125,
+            "line" : 144,
+            "column" : 12,
+            "source_fragment" : "to_bcg()"
+          },
+          "key" : [],
+          "match_type" : "exact",
+          "type" : "simple",
+          "max_size" : 1024,
+          "with_counters" : false,
+          "support_timeout" : false,
+          "direct_meters" : null,
+          "action_ids" : [7],
+          "actions" : ["MyIngress.to_bcg"],
+          "base_default_next" : null,
+          "next_tables" : {
+            "MyIngress.to_bcg" : null
+          },
+          "default_entry" : {
+            "action_id" : 7,
+            "action_const" : true,
+            "action_data" : [],
+            "action_entry_const" : true
+          }
+        },
+        {
+          "name" : "tbl_drop",
+          "id" : 5,
+          "source_info" : {
+            "filename" : "sdwan_switch.p4",
+            "line" : 146,
             "column" : 12,
             "source_fragment" : "drop()"
           },
@@ -597,7 +679,7 @@
           "id" : 0,
           "source_info" : {
             "filename" : "sdwan_switch.p4",
-            "line" : 113,
+            "line" : 128,
             "column" : 12,
             "source_fragment" : "standard_metadata.ingress_port == 0"
           },
@@ -623,7 +705,7 @@
           "id" : 1,
           "source_info" : {
             "filename" : "sdwan_switch.p4",
-            "line" : 114,
+            "line" : 130,
             "column" : 16,
             "source_fragment" : "hdr.ipv4.isValid()"
           },
@@ -646,7 +728,7 @@
           "id" : 2,
           "source_info" : {
             "filename" : "sdwan_switch.p4",
-            "line" : 120,
+            "line" : 136,
             "column" : 19,
             "source_fragment" : "standard_metadata.ingress_port == 1"
           },
@@ -672,7 +754,7 @@
           "id" : 3,
           "source_info" : {
             "filename" : "sdwan_switch.p4",
-            "line" : 122,
+            "line" : 139,
             "column" : 19,
             "source_fragment" : "standard_metadata.ingress_port == 2"
           },
@@ -691,6 +773,32 @@
             }
           },
           "true_next" : "tbl_to_bcg_0",
+          "false_next" : "node_10"
+        },
+        {
+          "name" : "node_10",
+          "id" : 4,
+          "source_info" : {
+            "filename" : "sdwan_switch.p4",
+            "line" : 142,
+            "column" : 19,
+            "source_fragment" : "standard_metadata.ingress_port == 3"
+          },
+          "expression" : {
+            "type" : "expression",
+            "value" : {
+              "op" : "==",
+              "left" : {
+                "type" : "field",
+                "value" : ["standard_metadata", "ingress_port"]
+              },
+              "right" : {
+                "type" : "hexstr",
+                "value" : "0x0003"
+              }
+            }
+          },
+          "true_next" : "tbl_to_bcg_1",
           "false_next" : "tbl_drop"
         }
       ]
@@ -700,7 +808,7 @@
       "id" : 1,
       "source_info" : {
         "filename" : "sdwan_switch.p4",
-        "line" : 130,
+        "line" : 151,
         "column" : 8,
         "source_fragment" : "MyEgress"
       },
@@ -716,7 +824,7 @@
       "id" : 0,
       "source_info" : {
         "filename" : "sdwan_switch.p4",
-        "line" : 138,
+        "line" : 159,
         "column" : 8,
         "source_fragment" : "update_checksum( ..."
       },

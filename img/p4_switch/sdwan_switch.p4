@@ -1,15 +1,20 @@
 /*
  * Switch P4 SD-WAN
- * Port 0: vxlan1    → BCG
- * Port 1: p4sX-mpls → MPLS (teléfonos)
- * Port 2: p4sX-isp  → ExtNet (hosts)
  *
- * Lógica:
- *   Port 0 entrada, IP dst 10.20.x.128/25 → Port 1 (MPLS)
- *   Port 0 entrada, IP dst 10.20.x.0/25   → Port 2 (ISP)
- *   Port 0 entrada, ARP                   → Port 1 (MPLS)
- *   Port 1 entrada                        → Port 0 (BCG)
- *   Port 2 entrada                        → Port 0 (BCG)
+ * Port 0: vxlan1         → BCG (clientes)
+ * Port 1: p4sX-mpls      → MPLS (teléfonos)
+ * Port 2: vxlan2         → inter-sede (hosts)
+ * Port 3: p4sX-nat-inner → kernel NAT → internet
+ *
+ * Lógica ingress:
+ *   Port 0 entrada, IPv4:
+ *     dst 10.20.remota.128/25 → to_mpls  → port 1
+ *     dst 10.20.remota.0/25   → to_isp   → port 2
+ *     cualquier otro dst      → to_nat   → port 3  (default)
+ *   Port 0 entrada, no-IPv4 (ARP...) → to_mpls → port 1
+ *   Port 1 entrada → to_bcg → port 0
+ *   Port 2 entrada → to_bcg → port 0
+ *   Port 3 entrada → to_bcg → port 0  (retorno NAT)
  */
 
 #include <core.p4>
@@ -84,16 +89,24 @@ control MyIngress(inout headers hdr,
         mark_to_drop(standard_metadata);
     }
 
+    // Port 1: teléfonos vía MPLS
     action to_mpls() {
         standard_metadata.egress_spec = 1;
     }
 
+    // Port 2: hosts inter-sede vía vxlan2
     action to_isp() {
         standard_metadata.egress_spec = 2;
     }
 
+    // Port 0: devolver al BCG
     action to_bcg() {
         standard_metadata.egress_spec = 0;
+    }
+
+    // Port 3: tráfico internet → kernel NAT (MASQUERADE) → ISP
+    action to_nat() {
+        standard_metadata.egress_spec = 3;
     }
 
     table routing {
@@ -103,23 +116,31 @@ control MyIngress(inout headers hdr,
         actions = {
             to_mpls;
             to_isp;
+            to_nat;
             drop;
         }
-        default_action = drop();
+        // Sin match LPM → internet → NAT
+        default_action = to_nat();
         size = 16;
     }
 
     apply {
         if (standard_metadata.ingress_port == 0) {
+            // Tráfico desde BCG
             if (hdr.ipv4.isValid()) {
                 routing.apply();
             } else {
-                // ARP u otro tráfico no-IP desde BCG → MPLS
+                // ARP u otro tráfico no-IP → MPLS
                 to_mpls();
             }
         } else if (standard_metadata.ingress_port == 1) {
+            // Retorno MPLS → BCG
             to_bcg();
         } else if (standard_metadata.ingress_port == 2) {
+            // Retorno inter-sede → BCG
+            to_bcg();
+        } else if (standard_metadata.ingress_port == 3) {
+            // Retorno NAT (kernel deshizo MASQUERADE) → BCG
             to_bcg();
         } else {
             drop();
