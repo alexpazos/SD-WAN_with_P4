@@ -38,12 +38,10 @@ SPAIN
   </global>
     
   <net name="lan1" mode="virtual_bridge" />
-  <net name="lan11" mode="veth" type="p2p"/>
-  <net name="lan12" mode="veth" type="p2p"/>
-  <net name="AccessNet1" mode="openvswitch" managed="no"/>
+  <net name="lan11" mode="virtual_bridge" />
   <net name="lan2" mode="virtual_bridge" />
-  <net name="lan21" mode="veth" type="p2p"/>
-  <net name="lan22" mode="veth" type="p2p"/>
+  <net name="lan21" mode="virtual_bridge" />
+  <net name="AccessNet1" mode="openvswitch" managed="no"/>
   <net name="AccessNet2" mode="openvswitch" managed="no"/>
 
   <net name="MplsWan" mode="openvswitch" managed="no"/>
@@ -111,9 +109,6 @@ SPAIN
     <if id="2" net="lan11">
         <ipv4>10.20.0.1/24</ipv4>
     </if>
-    <if id="3" net="lan12">
-        <ipv4>192.168.255.253/24</ipv4>
-    </if>
     <exec seq="on_boot" type="verbatim">
        # Change interfaces MTU
        ifconfig eth1 mtu 1400
@@ -121,8 +116,9 @@ SPAIN
     </exec>
     <forwarding type="ip" />
     <route type="ipv4" gw="10.20.0.2">10.20.2.0/24</route>
-    <route type="ipv4" gw="192.168.255.254">0.0.0.0/0</route>
+    <route type="ipv4" gw="10.20.0.2">0.0.0.0/0</route>
   </vm>   
+
   <vm name="r2" type="lxc" exec_mode="lxc-attach" arch="x86_64">
     <filesystem type="cow">/usr/share/vnx/filesystems/rootfs_lxc_ubuntu64</filesystem>
     <if id="1" net="lan2">
@@ -131,9 +127,6 @@ SPAIN
     <if id="2" net="lan21">
         <ipv4>10.20.0.2/24</ipv4>
     </if>
-    <if id="3" net="lan22">
-        <ipv4>192.168.255.253/24</ipv4>
-    </if>
     <exec seq="on_boot" type="verbatim">
        # Change interfaces MTU
        ifconfig eth1 mtu 1400
@@ -141,7 +134,7 @@ SPAIN
     </exec>
     <forwarding type="ip" />
     <route type="ipv4" gw="10.20.0.1">10.20.1.0/24</route>
-    <route type="ipv4" gw="192.168.255.254">0.0.0.0/0</route>
+    <route type="ipv4" gw="10.20.0.1">0.0.0.0/0</route>
   </vm>   
 
   <vm name="voip-gw" type="lxc" exec_mode="lxc-attach" arch="x86_64">
@@ -155,57 +148,4 @@ SPAIN
     <route type="ipv4" gw="10.20.0.2">10.20.2.0/24</route>
   </vm>
 
-  <vm name="bcg1" type="lxc" exec_mode="lxc-attach" arch="x86_64">
-    <filesystem type="cow">/usr/share/vnx/filesystems/rootfs_lxc_ubuntu64</filesystem>
-    <if id="1" net="lan11">
-    </if>
-    <if id="2" net="lan12">
-    </if>
-    <if id="3" net="AccessNet1">
-      <ipv4>10.255.0.2/24</ipv4>
-    </if>
-    <exec seq="on_boot" type="verbatim">
-        service openvswitch-switch start
-        sleep 5
-        ifconfig eth1 up
-        ifconfig eth2 up
-        ovs-vsctl add-br brwan
-        ip link add vxlan1 type vxlan id 1 remote 10.255.0.1 dstport 4789 dev eth3
-        ovs-vsctl add-port brwan eth1
-        ovs-vsctl add-port brwan vxlan1
-        ifconfig vxlan1 up
-        ovs-vsctl add-br brint
-        ip link add vxlan2 type vxlan id 2 remote 10.255.0.1 dstport 8742 dev eth3
-        ovs-vsctl add-port brint eth2
-        ovs-vsctl add-port brint vxlan2
-        ifconfig vxlan2 up
-    </exec>
-  </vm>
-
-  <vm name="bcg2" type="lxc" exec_mode="lxc-attach" arch="x86_64">
-    <filesystem type="cow">/usr/share/vnx/filesystems/rootfs_lxc_ubuntu64</filesystem>
-    <if id="1" net="lan21">
-    </if>
-    <if id="2" net="lan22">
-    </if>
-    <if id="3" net="AccessNet2">
-      <ipv4>10.255.0.2/24</ipv4>
-    </if>
-    <exec seq="on_boot" type="verbatim">
-        service openvswitch-switch start
-        sleep 5
-        ifconfig eth1 up
-        ifconfig eth2 up
-        ovs-vsctl add-br brwan
-        ip link add vxlan1 type vxlan id 1 remote 10.255.0.1 dstport 4789 dev eth3
-        ovs-vsctl add-port brwan eth1
-        ovs-vsctl add-port brwan vxlan1
-        ifconfig vxlan1 up
-        ovs-vsctl add-br brint
-        ip link add vxlan2 type vxlan id 2 remote 10.255.0.1 dstport 8742 dev eth3
-        ovs-vsctl add-port brint eth2
-        ovs-vsctl add-port brint vxlan2
-        ifconfig vxlan2 up
-    </exec>
-  </vm>
-  </vnx>
+</vnx>
