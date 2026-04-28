@@ -21,7 +21,6 @@
   <net name="MplsWan"    mode="openvswitch" managed="no"/>
   <net name="virbr0" mode="virtual_bridge" managed="no"/>
 
-  <!-- Hosts sede1 -->
   <vm name="h1" type="lxc" exec_mode="lxc-attach" arch="x86_64">
     <filesystem type="cow">/usr/share/vnx/filesystems/rootfs_lxc_ubuntu64</filesystem>
     <if id="1" net="lan1"><ipv4>10.20.1.2/24</ipv4></if>
@@ -36,7 +35,6 @@
     <route type="ipv4" gw="10.20.1.1">default</route>
   </vm>
 
-  <!-- Hosts sede2 -->
   <vm name="h2" type="lxc" exec_mode="lxc-attach" arch="x86_64">
     <filesystem type="cow">/usr/share/vnx/filesystems/rootfs_lxc_ubuntu64</filesystem>
     <if id="1" net="lan2"><ipv4>10.20.2.2/24</ipv4></if>
@@ -51,26 +49,24 @@
     <route type="ipv4" gw="10.20.2.1">default</route>
   </vm>
 
-  <!-- Router sede1: gateway hacia BCG1 (10.20.0.10) -->
+  <!-- Router sede1: la sede remota se alcanza via r2, no via BCG. -->
   <vm name="r1" type="lxc" exec_mode="lxc-attach" arch="x86_64">
     <filesystem type="cow">/usr/share/vnx/filesystems/rootfs_lxc_ubuntu64</filesystem>
     <if id="1" net="lan1"><ipv4>10.20.1.1/24</ipv4></if>
     <if id="2" net="lan11"><ipv4>10.20.0.1/24</ipv4></if>
     <exec seq="on_boot" type="verbatim">ifconfig eth1 mtu 1400</exec>
     <forwarding type="ip" />
-    <route type="ipv4" gw="10.20.0.10">10.20.2.0/24</route>
-    <route type="ipv4" gw="10.20.0.10">0.0.0.0/0</route>
+    <route type="ipv4" gw="10.20.0.2">10.20.2.0/24</route>
   </vm>
 
-  <!-- Router sede2: gateway hacia BCG2 (10.20.0.10) -->
+  <!-- Router sede2: la sede remota se alcanza via r1, no via BCG. -->
   <vm name="r2" type="lxc" exec_mode="lxc-attach" arch="x86_64">
     <filesystem type="cow">/usr/share/vnx/filesystems/rootfs_lxc_ubuntu64</filesystem>
     <if id="1" net="lan2"><ipv4>10.20.2.1/24</ipv4></if>
     <if id="2" net="lan21"><ipv4>10.20.0.2/24</ipv4></if>
     <exec seq="on_boot" type="verbatim">ifconfig eth1 mtu 1400</exec>
     <forwarding type="ip" />
-    <route type="ipv4" gw="10.20.0.10">10.20.1.0/24</route>
-    <route type="ipv4" gw="10.20.0.10">0.0.0.0/0</route>
+    <route type="ipv4" gw="10.20.0.1">10.20.1.0/24</route>
   </vm>
 
   <vm name="voip-gw" type="lxc" exec_mode="lxc-attach" arch="x86_64">

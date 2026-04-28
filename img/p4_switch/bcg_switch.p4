@@ -1,251 +1,350 @@
-/* ============================================================
- * bcg_switch.p4  —  Switch P4 del BCG (sede remota)
- *
- * Ports:
- *   Port 0: p4bcgX-router  → lan11/lan21 (hacia router)
- *   Port 1: p4bcgX-access  → AccessNet (Geneve hacia central)
- *   Port 2: p4bcgX-tun-in  → veth interno → kernel → veth externo → lan11/lan21
- *                            (retorno desencapsulado, NO pasa por port 0)
- *
- * Lógica:
- *   Port 0 entrada (IP):
- *     dst 10.20.x.0/25   → encap Geneve TLV=hosts(0)  → port 1
- *     dst 10.20.x.128/25 → encap Geneve TLV=phones(1) → port 1
- *   Port 0 entrada (ARP) → port 1
- *   Port 1 entrada (Geneve) → decap → port 2 (kernel)
- *   Port 1 entrada (ARP)    → port 0
- *
- * Inner del Geneve es IP puro (no Ethernet).
- * ============================================================ */
-
 #include <core.p4>
 #include <v1model.p4>
 
-const bit<16> ETHERTYPE_IPV4   = 0x0800;
-const bit<16> ETHERTYPE_ARP    = 0x0806;
-const bit<8>  IP_PROTO_UDP     = 17;
-const bit<16> GENEVE_UDP_PORT  = 6081;
-const bit<16> GENEVE_PROTO_IP  = 0x0800;
-const bit<16> TLV_OPT_CLASS    = 0xFF01;
-const bit<8>  TLV_TYPE         = 0x01;
-const bit<5>  TLV_LENGTH       = 1;
+const bit<16> ETH_TYPE_IPV4 = 0x0800;
+const bit<16> ETH_TYPE_ARP  = 0x0806;
+const bit<8>  IP_PROTO_UDP  = 17;
+const bit<16> UDP_PORT_GENEVE = 6081;
+
+const bit<32> TLV_HOSTS  = 0x00000000;
+const bit<32> TLV_PHONES = 0x00000001;
+const bit<32> TLV_ARP    = 0x00000002;
 
 header ethernet_t {
-    bit<48> dst_addr;
-    bit<48> src_addr;
-    bit<16> ether_type;
+    bit<48> dstAddr;
+    bit<48> srcAddr;
+    bit<16> etherType;
 }
 
 header ipv4_t {
     bit<4>  version;
     bit<4>  ihl;
     bit<8>  diffserv;
-    bit<16> total_len;
+    bit<16> totalLen;
     bit<16> identification;
     bit<3>  flags;
-    bit<13> frag_offset;
+    bit<13> fragOffset;
     bit<8>  ttl;
     bit<8>  protocol;
-    bit<16> hdr_checksum;
-    bit<32> src_addr;
-    bit<32> dst_addr;
+    bit<16> hdrChecksum;
+    bit<32> srcAddr;
+    bit<32> dstAddr;
 }
 
 header udp_t {
-    bit<16> src_port;
-    bit<16> dst_port;
+    bit<16> srcPort;
+    bit<16> dstPort;
     bit<16> length;
     bit<16> checksum;
 }
 
 header geneve_t {
-    bit<2>  ver;
-    bit<6>  opt_len;
+    bit<2>  version;
+    bit<6>  optionLen;
     bit<1>  oam;
     bit<1>  critical;
-    bit<6>  reserved;
-    bit<16> protocol_type;
+    bit<6>  reserved0;
+    bit<16> protocolType;
     bit<24> vni;
-    bit<8>  reserved2;
+    bit<8>  reserved1;
 }
 
-header geneve_tlv_t {
-    bit<16> option_class;
-    bit<8>  opt_type;
+/* One 8-byte Geneve option: 4-byte option header + 4-byte value. */
+header geneve_opt_t {
+    bit<16> optionClass;
+    bit<8>  type;
     bit<3>  reserved;
     bit<5>  length;
-    bit<32> data;
+    bit<32> value;
 }
 
 header arp_t {
-    bit<16> hw_type;
-    bit<16> proto_type;
-    bit<8>  hw_size;
-    bit<8>  proto_size;
-    bit<16> opcode;
-    bit<48> sender_mac;
-    bit<32> sender_ip;
-    bit<48> target_mac;
-    bit<32> target_ip;
+    bit<16> htype;
+    bit<16> ptype;
+    bit<8>  hlen;
+    bit<8>  plen;
+    bit<16> oper;
+    bit<48> sha;
+    bit<32> spa;
+    bit<48> tha;
+    bit<32> tpa;
 }
+
+struct metadata_t { }
 
 struct headers_t {
-    ethernet_t    ethernet;
-    ipv4_t        outer_ipv4;
-    udp_t         udp;
-    geneve_t      geneve;
-    geneve_tlv_t  geneve_tlv;
-    ipv4_t        inner_ipv4;
-    arp_t         arp;
+    ethernet_t ethernet;
+    ipv4_t     ipv4;
+    udp_t      udp;
+    geneve_t   geneve;
+    geneve_opt_t geneve_opt;
+    ethernet_t inner_ethernet;
+    ipv4_t     inner_ipv4;
+    arp_t      arp;
+    arp_t      inner_arp;
 }
 
-struct metadata_t {
-    bit<1>  do_encap;
-    bit<1>  do_decap;
-    bit<48> tunnel_src_mac;
-    bit<48> tunnel_dst_mac;
-    bit<32> tunnel_src_ip;
-    bit<32> tunnel_dst_ip;
-    bit<24> vni;
-    bit<32> tlv_data;
-}
-
-parser MyParser(packet_in pkt,
+parser MyParser(packet_in packet,
                 out headers_t hdr,
                 inout metadata_t meta,
-                inout standard_metadata_t std_meta) {
-
+                inout standard_metadata_t standard_metadata) {
     state start {
-        meta.do_encap       = 0;
-        meta.do_decap       = 0;
-        meta.tunnel_src_mac = 0;
-        meta.tunnel_dst_mac = 0;
-        meta.tlv_data       = 0;
-        transition parse_ethernet;
-    }
-
-    state parse_ethernet {
-        pkt.extract(hdr.ethernet);
-        transition select(hdr.ethernet.ether_type) {
-            ETHERTYPE_IPV4: parse_ipv4;
-            ETHERTYPE_ARP:  parse_arp;
-            default:        accept;
+        packet.extract(hdr.ethernet);
+        transition select(hdr.ethernet.etherType) {
+            ETH_TYPE_IPV4: parse_ipv4;
+            ETH_TYPE_ARP:  parse_arp;
+            default: accept;
         }
     }
 
-    state parse_arp { pkt.extract(hdr.arp); transition accept; }
-
     state parse_ipv4 {
-        pkt.extract(hdr.outer_ipv4);
-        transition select(hdr.outer_ipv4.protocol) {
+        packet.extract(hdr.ipv4);
+        transition select(hdr.ipv4.protocol) {
             IP_PROTO_UDP: parse_udp;
-            default:      accept;
+            default: accept;
         }
     }
 
     state parse_udp {
-        pkt.extract(hdr.udp);
-        transition select(hdr.udp.dst_port) {
-            GENEVE_UDP_PORT: parse_geneve;
-            default:         accept;
+        packet.extract(hdr.udp);
+        transition select(hdr.udp.dstPort) {
+            UDP_PORT_GENEVE: parse_geneve;
+            default: accept;
         }
     }
 
     state parse_geneve {
-        pkt.extract(hdr.geneve);
-        transition select(hdr.geneve.opt_len) {
-            0:       parse_inner_ipv4;
-            default: parse_geneve_tlv;
+        packet.extract(hdr.geneve);
+        transition parse_geneve_opt;
+    }
+
+    state parse_geneve_opt {
+        packet.extract(hdr.geneve_opt);
+        transition parse_inner_ethernet;
+    }
+
+    state parse_inner_ethernet {
+        packet.extract(hdr.inner_ethernet);
+        transition select(hdr.inner_ethernet.etherType) {
+            ETH_TYPE_IPV4: parse_inner_ipv4;
+            ETH_TYPE_ARP:  parse_inner_arp;
+            default: accept;
         }
     }
 
-    state parse_geneve_tlv {
-        pkt.extract(hdr.geneve_tlv);
-        transition parse_inner_ipv4;
+    state parse_inner_ipv4 {
+        packet.extract(hdr.inner_ipv4);
+        transition accept;
     }
 
-    state parse_inner_ipv4 {
-        pkt.extract(hdr.inner_ipv4);
+    state parse_arp {
+        packet.extract(hdr.arp);
+        transition accept;
+    }
+
+    state parse_inner_arp {
+        packet.extract(hdr.inner_arp);
         transition accept;
     }
 }
 
-control MyVerifyChecksum(inout headers_t hdr, inout metadata_t meta) {
-    apply { }
-}
+control MyVerifyChecksum(inout headers_t hdr, inout metadata_t meta) { apply { } }
 
 control MyIngress(inout headers_t hdr,
                   inout metadata_t meta,
-                  inout standard_metadata_t std_meta) {
+                  inout standard_metadata_t standard_metadata) {
 
-    action drop() { mark_to_drop(std_meta); }
+    action drop() { mark_to_drop(standard_metadata); }
 
-    action forward(bit<9> egress_port) {
-        std_meta.egress_spec = egress_port;
+    action encap_geneve_ipv4(bit<9> port,
+                             bit<48> outer_src_mac,
+                             bit<48> outer_dst_mac,
+                             bit<32> outer_src_ip,
+                             bit<32> outer_dst_ip,
+                             bit<24> vni,
+                             bit<32> tlv_value) {
+        bit<16> inner_len;
+
+        inner_len = hdr.ipv4.totalLen + 14;
+
+        hdr.inner_ethernet.setValid();
+        hdr.inner_ethernet = hdr.ethernet;
+        hdr.inner_ipv4.setValid();
+        hdr.inner_ipv4 = hdr.ipv4;
+
+        hdr.ethernet.srcAddr = outer_src_mac;
+        hdr.ethernet.dstAddr = outer_dst_mac;
+        hdr.ethernet.etherType = ETH_TYPE_IPV4;
+
+        hdr.ipv4.version = 4;
+        hdr.ipv4.ihl = 5;
+        hdr.ipv4.diffserv = 0;
+        hdr.ipv4.totalLen = inner_len + 20 + 8 + 8 + 8;
+        hdr.ipv4.identification = 0;
+        hdr.ipv4.flags = 0;
+        hdr.ipv4.fragOffset = 0;
+        hdr.ipv4.ttl = 64;
+        hdr.ipv4.protocol = IP_PROTO_UDP;
+        hdr.ipv4.srcAddr = outer_src_ip;
+        hdr.ipv4.dstAddr = outer_dst_ip;
+
+        hdr.udp.setValid();
+        hdr.udp.srcPort = 49431;
+        hdr.udp.dstPort = UDP_PORT_GENEVE;
+        hdr.udp.length = inner_len + 8 + 8 + 8;
+        hdr.udp.checksum = 0;
+
+        hdr.geneve.setValid();
+        hdr.geneve.version = 0;
+        hdr.geneve.optionLen = 2;
+        hdr.geneve.oam = 0;
+        hdr.geneve.critical = 0;
+        hdr.geneve.reserved0 = 0;
+        hdr.geneve.protocolType = 0x6558;
+        hdr.geneve.vni = vni;
+        hdr.geneve.reserved1 = 0;
+
+        hdr.geneve_opt.setValid();
+        hdr.geneve_opt.optionClass = 0x0102;
+        hdr.geneve_opt.type = 0x01;
+        hdr.geneve_opt.reserved = 0;
+        hdr.geneve_opt.length = 1;
+        hdr.geneve_opt.value = tlv_value;
+
+        standard_metadata.egress_spec = port;
     }
 
-    action encap_geneve_tlv(bit<9>  egress_port,
-                            bit<48> src_mac,
-                            bit<48> dst_mac,
-                            bit<32> src_ip,
-                            bit<32> dst_ip,
+    action encap_geneve_arp(bit<9> port,
+                            bit<48> outer_src_mac,
+                            bit<48> outer_dst_mac,
+                            bit<32> outer_src_ip,
+                            bit<32> outer_dst_ip,
                             bit<24> vni,
-                            bit<32> tlv_data) {
-        std_meta.egress_spec = egress_port;
-        meta.do_encap        = 1;
-        meta.tunnel_src_mac  = src_mac;
-        meta.tunnel_dst_mac  = dst_mac;
-        meta.tunnel_src_ip   = src_ip;
-        meta.tunnel_dst_ip   = dst_ip;
-        meta.vni             = vni;
-        meta.tlv_data        = tlv_data;
+                            bit<32> tlv_value) {
+        bit<16> inner_len;
+
+        inner_len = 42;
+
+        hdr.inner_ethernet.setValid();
+        hdr.inner_ethernet = hdr.ethernet;
+        hdr.inner_arp.setValid();
+        hdr.inner_arp = hdr.arp;
+        hdr.arp.setInvalid();
+
+        hdr.ethernet.srcAddr = outer_src_mac;
+        hdr.ethernet.dstAddr = outer_dst_mac;
+        hdr.ethernet.etherType = ETH_TYPE_IPV4;
+
+        hdr.ipv4.setValid();
+        hdr.ipv4.version = 4;
+        hdr.ipv4.ihl = 5;
+        hdr.ipv4.diffserv = 0;
+        hdr.ipv4.totalLen = inner_len + 20 + 8 + 8 + 8;
+        hdr.ipv4.identification = 0;
+        hdr.ipv4.flags = 0;
+        hdr.ipv4.fragOffset = 0;
+        hdr.ipv4.ttl = 64;
+        hdr.ipv4.protocol = IP_PROTO_UDP;
+        hdr.ipv4.srcAddr = outer_src_ip;
+        hdr.ipv4.dstAddr = outer_dst_ip;
+
+        hdr.udp.setValid();
+        hdr.udp.srcPort = 49431;
+        hdr.udp.dstPort = UDP_PORT_GENEVE;
+        hdr.udp.length = inner_len + 8 + 8 + 8;
+        hdr.udp.checksum = 0;
+
+        hdr.geneve.setValid();
+        hdr.geneve.version = 0;
+        hdr.geneve.optionLen = 2;
+        hdr.geneve.oam = 0;
+        hdr.geneve.critical = 0;
+        hdr.geneve.reserved0 = 0;
+        hdr.geneve.protocolType = 0x6558;
+        hdr.geneve.vni = vni;
+        hdr.geneve.reserved1 = 0;
+
+        hdr.geneve_opt.setValid();
+        hdr.geneve_opt.optionClass = 0x0102;
+        hdr.geneve_opt.type = 0x01;
+        hdr.geneve_opt.reserved = 0;
+        hdr.geneve_opt.length = 1;
+        hdr.geneve_opt.value = tlv_value;
+
+        standard_metadata.egress_spec = port;
     }
 
-    // tun_src_mac: MAC del extremo P4 (tun-in)
-    // tun_dst_mac: MAC del extremo kernel (tun-out)
-    action decap_geneve(bit<9>  egress_port,
-                        bit<48> tun_src_mac,
-                        bit<48> tun_dst_mac) {
-        std_meta.egress_spec = egress_port;
-        meta.do_decap        = 1;
-        meta.tunnel_src_mac  = tun_src_mac;
-        meta.tunnel_dst_mac  = tun_dst_mac;
+    action decap_geneve_ipv4(bit<9> port) {
+        hdr.ethernet = hdr.inner_ethernet;
+        hdr.ipv4 = hdr.inner_ipv4;
+
+        hdr.udp.setInvalid();
+        hdr.geneve.setInvalid();
+        hdr.geneve_opt.setInvalid();
+        hdr.inner_ethernet.setInvalid();
+        hdr.inner_ipv4.setInvalid();
+        standard_metadata.egress_spec = port;
     }
 
-    table from_router {
+    action decap_geneve_arp(bit<9> port) {
+        hdr.ethernet = hdr.inner_ethernet;
+        hdr.arp.setValid();
+        hdr.arp = hdr.inner_arp;
+
+        hdr.ipv4.setInvalid();
+        hdr.udp.setInvalid();
+        hdr.geneve.setInvalid();
+        hdr.geneve_opt.setInvalid();
+        hdr.inner_ethernet.setInvalid();
+        hdr.inner_arp.setInvalid();
+        standard_metadata.egress_spec = port;
+    }
+
+    table from_router_ipv4 {
         key = {
-            hdr.outer_ipv4.dst_addr : lpm;
-            std_meta.ingress_port   : exact;
+            hdr.ipv4.dstAddr: lpm;
+            standard_metadata.ingress_port: exact;
         }
-        actions = { encap_geneve_tlv; drop; }
+        actions = { encap_geneve_ipv4; drop; NoAction; }
+        size = 32;
         default_action = drop();
-        size = 64;
     }
 
-    table from_access {
-        key = {
-            hdr.inner_ipv4.dst_addr : lpm;
-            std_meta.ingress_port   : exact;
-        }
-        actions = { decap_geneve; drop; }
+    table from_router_arp {
+        key = { standard_metadata.ingress_port: exact; }
+        actions = { encap_geneve_arp; drop; NoAction; }
+        size = 4;
         default_action = drop();
-        size = 64;
+    }
+
+    table from_access_ipv4 {
+        key = { standard_metadata.ingress_port: exact; }
+        actions = { decap_geneve_ipv4; drop; NoAction; }
+        size = 4;
+        default_action = drop();
+    }
+
+    table from_access_arp {
+        key = { standard_metadata.ingress_port: exact; }
+        actions = { decap_geneve_arp; drop; NoAction; }
+        size = 4;
+        default_action = drop();
     }
 
     apply {
-        if (std_meta.ingress_port == 0) {
+        if (standard_metadata.ingress_port == 0) {
             if (hdr.arp.isValid()) {
-                forward(1);
-            } else if (hdr.outer_ipv4.isValid()) {
-                from_router.apply();
+                from_router_arp.apply();
+            } else if (hdr.ipv4.isValid() && !hdr.geneve.isValid()) {
+                from_router_ipv4.apply();
             } else {
                 drop();
             }
-        } else if (std_meta.ingress_port == 1) {
-            if (hdr.geneve.isValid()) {
-                from_access.apply();
-            } else if (hdr.arp.isValid()) {
-                forward(0);
+        } else if (standard_metadata.ingress_port == 1 && hdr.geneve.isValid()) {
+            if (hdr.inner_ipv4.isValid()) {
+                from_access_ipv4.apply();
+            } else if (hdr.inner_arp.isValid()) {
+                from_access_arp.apply();
             } else {
                 drop();
             }
@@ -257,126 +356,40 @@ control MyIngress(inout headers_t hdr,
 
 control MyEgress(inout headers_t hdr,
                  inout metadata_t meta,
-                 inout standard_metadata_t std_meta) {
-    apply {
-
-        if (meta.do_encap == 1) {
-            // El IP del router pasa a ser inner
-            hdr.inner_ipv4.setValid();
-            hdr.inner_ipv4.version        = hdr.outer_ipv4.version;
-            hdr.inner_ipv4.ihl            = hdr.outer_ipv4.ihl;
-            hdr.inner_ipv4.diffserv       = hdr.outer_ipv4.diffserv;
-            hdr.inner_ipv4.total_len      = hdr.outer_ipv4.total_len;
-            hdr.inner_ipv4.identification = hdr.outer_ipv4.identification;
-            hdr.inner_ipv4.flags          = hdr.outer_ipv4.flags;
-            hdr.inner_ipv4.frag_offset    = hdr.outer_ipv4.frag_offset;
-            hdr.inner_ipv4.ttl            = hdr.outer_ipv4.ttl - 1;
-            hdr.inner_ipv4.protocol       = hdr.outer_ipv4.protocol;
-            hdr.inner_ipv4.hdr_checksum   = 0;
-            hdr.inner_ipv4.src_addr       = hdr.outer_ipv4.src_addr;
-            hdr.inner_ipv4.dst_addr       = hdr.outer_ipv4.dst_addr;
-
-            hdr.geneve_tlv.setValid();
-            hdr.geneve_tlv.option_class = TLV_OPT_CLASS;
-            hdr.geneve_tlv.opt_type     = TLV_TYPE;
-            hdr.geneve_tlv.reserved     = 0;
-            hdr.geneve_tlv.length       = TLV_LENGTH;
-            hdr.geneve_tlv.data         = meta.tlv_data;
-
-            hdr.geneve.setValid();
-            hdr.geneve.ver           = 0;
-            hdr.geneve.opt_len       = 2;
-            hdr.geneve.oam           = 0;
-            hdr.geneve.critical      = 0;
-            hdr.geneve.reserved      = 0;
-            hdr.geneve.protocol_type = GENEVE_PROTO_IP;
-            hdr.geneve.vni           = meta.vni;
-            hdr.geneve.reserved2     = 0;
-
-            hdr.udp.setValid();
-            hdr.udp.src_port = 0xC117;
-            hdr.udp.dst_port = GENEVE_UDP_PORT;
-            hdr.udp.length   = 8 + 8 + 8 + hdr.inner_ipv4.total_len;
-            hdr.udp.checksum = 0;
-
-            hdr.outer_ipv4.setValid();
-            hdr.outer_ipv4.version        = 4;
-            hdr.outer_ipv4.ihl            = 5;
-            hdr.outer_ipv4.diffserv       = 0;
-            hdr.outer_ipv4.total_len      = 20 + hdr.udp.length;
-            hdr.outer_ipv4.identification = 0;
-            hdr.outer_ipv4.flags          = 0;
-            hdr.outer_ipv4.frag_offset    = 0;
-            hdr.outer_ipv4.ttl            = 64;
-            hdr.outer_ipv4.protocol       = IP_PROTO_UDP;
-            hdr.outer_ipv4.hdr_checksum   = 0;
-            hdr.outer_ipv4.src_addr       = meta.tunnel_src_ip;
-            hdr.outer_ipv4.dst_addr       = meta.tunnel_dst_ip;
-
-            hdr.ethernet.dst_addr   = meta.tunnel_dst_mac;
-            hdr.ethernet.src_addr   = meta.tunnel_src_mac;
-            hdr.ethernet.ether_type = ETHERTYPE_IPV4;
-
-        } else if (meta.do_decap == 1) {
-            // Emitir hacia el kernel (port 2 = tun-in)
-            // dst_mac = MAC de tun-out (para que el kernel acepte el paquete)
-            // src_mac = MAC de tun-in
-            hdr.ethernet.dst_addr   = meta.tunnel_dst_mac;
-            hdr.ethernet.src_addr   = meta.tunnel_src_mac;
-            hdr.ethernet.ether_type = ETHERTYPE_IPV4;
-
-            hdr.outer_ipv4.setInvalid();
-            hdr.udp.setInvalid();
-            hdr.geneve.setInvalid();
-            hdr.geneve_tlv.setInvalid();
-        }
-    }
-}
+                 inout standard_metadata_t standard_metadata) { apply { } }
 
 control MyComputeChecksum(inout headers_t hdr, inout metadata_t meta) {
     apply {
         update_checksum(
-            hdr.outer_ipv4.isValid(),
-            { hdr.outer_ipv4.version, hdr.outer_ipv4.ihl,
-              hdr.outer_ipv4.diffserv, hdr.outer_ipv4.total_len,
-              hdr.outer_ipv4.identification, hdr.outer_ipv4.flags,
-              hdr.outer_ipv4.frag_offset, hdr.outer_ipv4.ttl,
-              hdr.outer_ipv4.protocol,
-              hdr.outer_ipv4.src_addr, hdr.outer_ipv4.dst_addr },
-            hdr.outer_ipv4.hdr_checksum,
-            HashAlgorithm.csum16
-        );
-        update_checksum(
-            hdr.inner_ipv4.isValid(),
-            { hdr.inner_ipv4.version, hdr.inner_ipv4.ihl,
-              hdr.inner_ipv4.diffserv, hdr.inner_ipv4.total_len,
-              hdr.inner_ipv4.identification, hdr.inner_ipv4.flags,
-              hdr.inner_ipv4.frag_offset, hdr.inner_ipv4.ttl,
-              hdr.inner_ipv4.protocol,
-              hdr.inner_ipv4.src_addr, hdr.inner_ipv4.dst_addr },
-            hdr.inner_ipv4.hdr_checksum,
-            HashAlgorithm.csum16
-        );
+            hdr.ipv4.isValid(),
+            { hdr.ipv4.version,
+              hdr.ipv4.ihl,
+              hdr.ipv4.diffserv,
+              hdr.ipv4.totalLen,
+              hdr.ipv4.identification,
+              hdr.ipv4.flags,
+              hdr.ipv4.fragOffset,
+              hdr.ipv4.ttl,
+              hdr.ipv4.protocol,
+              hdr.ipv4.srcAddr,
+              hdr.ipv4.dstAddr },
+            hdr.ipv4.hdrChecksum,
+            HashAlgorithm.csum16);
     }
 }
 
-control MyDeparser(packet_out pkt, in headers_t hdr) {
+control MyDeparser(packet_out packet, in headers_t hdr) {
     apply {
-        pkt.emit(hdr.ethernet);
-        pkt.emit(hdr.outer_ipv4);
-        pkt.emit(hdr.udp);
-        pkt.emit(hdr.geneve);
-        pkt.emit(hdr.geneve_tlv);
-        pkt.emit(hdr.inner_ipv4);
-        pkt.emit(hdr.arp);
+        packet.emit(hdr.ethernet);
+        packet.emit(hdr.ipv4);
+        packet.emit(hdr.udp);
+        packet.emit(hdr.geneve);
+        packet.emit(hdr.geneve_opt);
+        packet.emit(hdr.inner_ethernet);
+        packet.emit(hdr.inner_ipv4);
+        packet.emit(hdr.arp);
+        packet.emit(hdr.inner_arp);
     }
 }
 
-V1Switch(
-    MyParser(),
-    MyVerifyChecksum(),
-    MyIngress(),
-    MyEgress(),
-    MyComputeChecksum(),
-    MyDeparser()
-) main;
+V1Switch(MyParser(), MyVerifyChecksum(), MyIngress(), MyEgress(), MyComputeChecksum(), MyDeparser()) main;
