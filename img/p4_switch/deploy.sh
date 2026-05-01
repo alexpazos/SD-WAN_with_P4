@@ -200,8 +200,8 @@ deploy_central1() {
         echo 1 > /proc/sys/net/ipv4/ip_forward
         echo 0 > /proc/sys/net/ipv4/conf/all/rp_filter
         echo 0 > /proc/sys/net/ipv4/conf/p4c1-tun-out/rp_filter
-        iptables -I FORWARD 1 -i p4c1-mpls -p udp --dport 6081 -j DROP
-        iptables -I FORWARD 1 -i p4c1-access -p udp --dport 6081 -j DROP
+        iptables -I FORWARD 1 -i p4c1-mpls -j DROP
+        iptables -I FORWARD 1 -i p4c1-access -j DROP
         ip route replace default via ${CENTRAL1_ISP_GW} dev p4c1-isp
         echo '201 p4fwd' >> /etc/iproute2/rt_tables 2>/dev/null || true
         ip rule add iif p4c1-tun-out table 201 priority 100 2>/dev/null || true
@@ -223,8 +223,9 @@ deploy_central1() {
     mpls_mac=$(get_mac p4-central-sede1 p4c1-mpls)
 
     run_p4_cli "p4-central-sede1" "9091" "
-table_add forward_geneve_from_access rewrite_and_forward ${TLV_HOSTS}&&&0xFFFFFFFF 0 => 2 ${tun_in_mac} ${tun_out_mac} $(ip2hex ${BCG1_IP}) $(ip2hex ${BCG2_IP}) 100
-table_add forward_geneve_from_access rewrite_and_forward ${TLV_ARP}&&&0xFFFFFFFF 0 => 2 ${tun_in_mac} ${tun_out_mac} $(ip2hex ${BCG1_IP}) $(ip2hex ${BCG2_IP}) 100
+table_add from_access_geneve rewrite_geneve_and_forward ${TLV_HOSTS}&&&0xFFFFFFFF 0 => 2 ${tun_in_mac} ${tun_out_mac} $(ip2hex ${BCG1_IP}) $(ip2hex ${BCG2_IP}) 100
+table_add from_access_geneve decap_geneve_ipv4_to_mpls ${TLV_PHONES}&&&0xFFFFFFFF 0 => 1 100
+table_add from_access_geneve decap_geneve_arp_to_mpls ${TLV_ARP}&&&0xFFFFFFFF 0 => 1 100
 "
     print_info "Central1 desplegada"
 }
@@ -252,8 +253,8 @@ deploy_central2() {
         echo 1 > /proc/sys/net/ipv4/ip_forward
         echo 0 > /proc/sys/net/ipv4/conf/all/rp_filter
         echo 0 > /proc/sys/net/ipv4/conf/p4c2-tun-out/rp_filter
-        iptables -I FORWARD 1 -i p4c2-mpls -p udp --dport 6081 -j DROP
-        iptables -I FORWARD 1 -i p4c2-access -p udp --dport 6081 -j DROP
+        iptables -I FORWARD 1 -i p4c2-mpls -j DROP
+        iptables -I FORWARD 1 -i p4c2-access -j DROP
         ip route replace default via ${CENTRAL2_ISP_GW} dev p4c2-isp
         echo '201 p4fwd' >> /etc/iproute2/rt_tables 2>/dev/null || true
         ip rule add iif p4c2-tun-out table 201 priority 100 2>/dev/null || true
@@ -275,8 +276,9 @@ deploy_central2() {
     mpls_mac=$(get_mac p4-central-sede2 p4c2-mpls)
 
     run_p4_cli "p4-central-sede2" "9092" "
-table_add forward_geneve_from_access rewrite_and_forward ${TLV_HOSTS}&&&0xFFFFFFFF 0 => 2 ${tun_in_mac} ${tun_out_mac} $(ip2hex ${BCG2_IP}) $(ip2hex ${BCG1_IP}) 100
-table_add forward_geneve_from_access rewrite_and_forward ${TLV_ARP}&&&0xFFFFFFFF 0 => 2 ${tun_in_mac} ${tun_out_mac} $(ip2hex ${BCG2_IP}) $(ip2hex ${BCG1_IP}) 100
+table_add from_access_geneve rewrite_geneve_and_forward ${TLV_HOSTS}&&&0xFFFFFFFF 0 => 2 ${tun_in_mac} ${tun_out_mac} $(ip2hex ${BCG2_IP}) $(ip2hex ${BCG1_IP}) 100
+table_add from_access_geneve decap_geneve_ipv4_to_mpls ${TLV_PHONES}&&&0xFFFFFFFF 0 => 1 100
+table_add from_access_geneve decap_geneve_arp_to_mpls ${TLV_ARP}&&&0xFFFFFFFF 0 => 1 100
 "
     print_info "Central2 desplegada"
 }
@@ -320,6 +322,7 @@ table_add from_router_ipv4 encap_geneve_ipv4 10.20.1.0/25 0 => 1 ${bcg_mac} ${ce
 table_add from_router_ipv4 encap_geneve_ipv4 10.20.1.128/25 0 => 1 ${bcg_mac} ${cen_mac} ${bcg_hex} ${cen_hex} ${GENEVE_VNI} ${TLV_PHONES}
 table_add from_router_ipv4 encap_geneve_ipv4 10.20.2.0/25 0 => 1 ${bcg_mac} ${cen_mac} ${bcg_hex} ${cen_hex} ${GENEVE_VNI} ${TLV_HOSTS}
 table_add from_router_ipv4 encap_geneve_ipv4 10.20.2.128/25 0 => 1 ${bcg_mac} ${cen_mac} ${bcg_hex} ${cen_hex} ${GENEVE_VNI} ${TLV_PHONES}
+table_add from_router_ipv4 encap_geneve_ipv4 10.20.0.254/32 0 => 1 ${bcg_mac} ${cen_mac} ${bcg_hex} ${cen_hex} ${GENEVE_VNI} ${TLV_PHONES}
 table_add from_router_arp encap_geneve_arp 0 => 1 ${bcg_mac} ${cen_mac} ${bcg_hex} ${cen_hex} ${GENEVE_VNI} ${TLV_ARP}
 table_add from_access_ipv4 decap_geneve_ipv4 1 => 0
 table_add from_access_arp decap_geneve_arp 1 => 0
@@ -338,14 +341,14 @@ populate_mpls_and_return_tables() {
     c2_mpls=$(get_mac p4-central-sede2 p4c2-mpls)
 
     run_p4_cli "p4-central-sede1" "9091" "
-table_add forward_geneve_from_access rewrite_and_forward ${TLV_PHONES}&&&0xFFFFFFFF 0 => 1 ${c1_mpls} ${c2_mpls} $(ip2hex ${CENTRAL1_IP}) $(ip2hex ${BCG2_IP}) 100
-table_add forward_geneve_to_access rewrite_and_forward 1 => 0 ${c1_access} ${b1_access} $(ip2hex ${CENTRAL1_IP}) $(ip2hex ${BCG1_IP})
-table_add forward_geneve_to_access rewrite_and_forward 2 => 0 ${c1_access} ${b1_access} $(ip2hex ${CENTRAL1_IP}) $(ip2hex ${BCG1_IP})
+table_add from_wg_geneve rewrite_geneve_and_forward 2 => 0 ${c1_access} ${b1_access} $(ip2hex ${CENTRAL1_IP}) $(ip2hex ${BCG1_IP})
+table_add from_mpls_ipv4 encap_mpls_ipv4_to_access 1 => 0 ${c1_access} ${b1_access} $(ip2hex ${CENTRAL1_IP}) $(ip2hex ${BCG1_IP}) ${GENEVE_VNI} ${TLV_PHONES}
+table_add from_mpls_arp encap_mpls_arp_to_access 1 => 0 ${c1_access} ${b1_access} $(ip2hex ${CENTRAL1_IP}) $(ip2hex ${BCG1_IP}) ${GENEVE_VNI} ${TLV_ARP}
 "
     run_p4_cli "p4-central-sede2" "9092" "
-table_add forward_geneve_from_access rewrite_and_forward ${TLV_PHONES}&&&0xFFFFFFFF 0 => 1 ${c2_mpls} ${c1_mpls} $(ip2hex ${CENTRAL2_IP}) $(ip2hex ${BCG1_IP}) 100
-table_add forward_geneve_to_access rewrite_and_forward 1 => 0 ${c2_access} ${b2_access} $(ip2hex ${CENTRAL2_IP}) $(ip2hex ${BCG2_IP})
-table_add forward_geneve_to_access rewrite_and_forward 2 => 0 ${c2_access} ${b2_access} $(ip2hex ${CENTRAL2_IP}) $(ip2hex ${BCG2_IP})
+table_add from_wg_geneve rewrite_geneve_and_forward 2 => 0 ${c2_access} ${b2_access} $(ip2hex ${CENTRAL2_IP}) $(ip2hex ${BCG2_IP})
+table_add from_mpls_ipv4 encap_mpls_ipv4_to_access 1 => 0 ${c2_access} ${b2_access} $(ip2hex ${CENTRAL2_IP}) $(ip2hex ${BCG2_IP}) ${GENEVE_VNI} ${TLV_PHONES}
+table_add from_mpls_arp encap_mpls_arp_to_access 1 => 0 ${c2_access} ${b2_access} $(ip2hex ${CENTRAL2_IP}) $(ip2hex ${BCG2_IP}) ${GENEVE_VNI} ${TLV_ARP}
 "
     print_info "Tablas de centrales completas"
 }
