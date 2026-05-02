@@ -24,8 +24,8 @@ for port in p4c1-access p4c1-mpls p4c1-isp \
 done
 print_info "Puertos OVS eliminados"
 
-for veth in veth-p4bcg1-rou veth-p4bcg2-rou \
-            p4bcg1-router p4bcg2-router; do
+for veth in veth-p4bcg1-rou veth-p4bcg2-rou veth-p4bcg1-cpe veth-p4bcg2-cpe \
+            p4bcg1-router p4bcg2-router p4bcg1-cpe p4bcg2-cpe; do
     ip link del ${veth} 2>/dev/null || true
 done
 print_info "Veths Linux eliminados"

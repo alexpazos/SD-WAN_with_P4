@@ -8,7 +8,8 @@ const bit<16> UDP_PORT_GENEVE = 6081;
 
 const bit<32> TLV_HOSTS  = 0x00000000;
 const bit<32> TLV_PHONES = 0x00000001;
-const bit<32> TLV_ARP    = 0x00000002;
+const bit<32> TLV_ARP      = 0x00000002;
+const bit<32> TLV_INTERNET = 0x00000003;
 
 header ethernet_t {
     bit<48> dstAddr;
@@ -318,6 +319,7 @@ control MyIngress(inout headers_t hdr,
         key = {
             hdr.geneve_opt.value: ternary;
             standard_metadata.ingress_port: exact;
+            hdr.inner_ethernet.etherType: exact;
         }
         actions = {
             rewrite_geneve_and_forward;
@@ -326,7 +328,7 @@ control MyIngress(inout headers_t hdr,
             drop;
             NoAction;
         }
-        size = 16;
+        size = 32;
         default_action = drop();
     }
 
@@ -351,11 +353,33 @@ control MyIngress(inout headers_t hdr,
         default_action = drop();
     }
 
+    table from_tun_ipv4 {
+        key = { standard_metadata.ingress_port: exact; }
+        actions = { encap_mpls_ipv4_to_access; drop; NoAction; }
+        size = 4;
+        default_action = drop();
+    }
+
+    table from_tun_arp {
+        key = { standard_metadata.ingress_port: exact; }
+        actions = { encap_mpls_arp_to_access; drop; NoAction; }
+        size = 4;
+        default_action = drop();
+    }
+
     apply {
         if (standard_metadata.ingress_port == 0 && hdr.geneve.isValid()) {
             from_access_geneve.apply();
-        } else if (standard_metadata.ingress_port == 2 && hdr.geneve.isValid()) {
-            from_wg_geneve.apply();
+        } else if (standard_metadata.ingress_port == 2) {
+            if (hdr.geneve.isValid()) {
+                from_wg_geneve.apply();
+            } else if (hdr.arp.isValid()) {
+                from_tun_arp.apply();
+            } else if (hdr.ipv4.isValid()) {
+                from_tun_ipv4.apply();
+            } else {
+                drop();
+            }
         } else if (standard_metadata.ingress_port == 1) {
             if (hdr.arp.isValid()) {
                 from_mpls_arp.apply();
