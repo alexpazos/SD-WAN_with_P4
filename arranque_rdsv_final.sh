@@ -5,7 +5,7 @@ echo "==============================================="
 echo "RDSV RETO FINAL"
 echo "==============================================="
 
-BASE_DIR="$HOME/terraform-sdwan"
+BASE_DIR="$HOME/SD-WAN_with_P4"
 ENV_FILE="$BASE_DIR/basrc"
 
 echo

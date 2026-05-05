@@ -1,0 +1,238 @@
+pkg_info {
+  arch: "v1model"
+}
+tables {
+  preamble {
+    id: 45131141
+    name: "MyIngress.from_router_ipv4"
+    alias: "from_router_ipv4"
+  }
+  match_fields {
+    id: 1
+    name: "hdr.ipv4.dstAddr"
+    bitwidth: 32
+    match_type: LPM
+  }
+  match_fields {
+    id: 2
+    name: "standard_metadata.ingress_port"
+    bitwidth: 9
+    match_type: EXACT
+  }
+  action_refs {
+    id: 24198738
+  }
+  action_refs {
+    id: 25652968
+  }
+  action_refs {
+    id: 21257015
+  }
+  size: 32
+}
+tables {
+  preamble {
+    id: 40897177
+    name: "MyIngress.from_router_arp"
+    alias: "from_router_arp"
+  }
+  match_fields {
+    id: 1
+    name: "standard_metadata.ingress_port"
+    bitwidth: 9
+    match_type: EXACT
+  }
+  action_refs {
+    id: 22771676
+  }
+  action_refs {
+    id: 25652968
+  }
+  action_refs {
+    id: 21257015
+  }
+  size: 4
+}
+tables {
+  preamble {
+    id: 49388657
+    name: "MyIngress.from_access_ipv4"
+    alias: "from_access_ipv4"
+  }
+  match_fields {
+    id: 1
+    name: "hdr.geneve_opt.value"
+    bitwidth: 32
+    match_type: EXACT
+  }
+  match_fields {
+    id: 2
+    name: "standard_metadata.ingress_port"
+    bitwidth: 9
+    match_type: EXACT
+  }
+  action_refs {
+    id: 29662784
+  }
+  action_refs {
+    id: 25652968
+  }
+  action_refs {
+    id: 21257015
+  }
+  size: 8
+}
+tables {
+  preamble {
+    id: 39451575
+    name: "MyIngress.from_access_arp"
+    alias: "from_access_arp"
+  }
+  match_fields {
+    id: 1
+    name: "hdr.geneve_opt.value"
+    bitwidth: 32
+    match_type: EXACT
+  }
+  match_fields {
+    id: 2
+    name: "standard_metadata.ingress_port"
+    bitwidth: 9
+    match_type: EXACT
+  }
+  action_refs {
+    id: 23444996
+  }
+  action_refs {
+    id: 25652968
+  }
+  action_refs {
+    id: 21257015
+  }
+  size: 8
+}
+actions {
+  preamble {
+    id: 21257015
+    name: "NoAction"
+    alias: "NoAction"
+    annotations: "@noWarn(\"unused\")"
+  }
+}
+actions {
+  preamble {
+    id: 25652968
+    name: "MyIngress.drop"
+    alias: "drop"
+  }
+}
+actions {
+  preamble {
+    id: 24198738
+    name: "MyIngress.encap_geneve_ipv4"
+    alias: "encap_geneve_ipv4"
+  }
+  params {
+    id: 1
+    name: "port"
+    bitwidth: 9
+  }
+  params {
+    id: 2
+    name: "outer_src_mac"
+    bitwidth: 48
+  }
+  params {
+    id: 3
+    name: "outer_dst_mac"
+    bitwidth: 48
+  }
+  params {
+    id: 4
+    name: "outer_src_ip"
+    bitwidth: 32
+  }
+  params {
+    id: 5
+    name: "outer_dst_ip"
+    bitwidth: 32
+  }
+  params {
+    id: 6
+    name: "vni"
+    bitwidth: 24
+  }
+  params {
+    id: 7
+    name: "tlv_value"
+    bitwidth: 32
+  }
+}
+actions {
+  preamble {
+    id: 22771676
+    name: "MyIngress.encap_geneve_arp"
+    alias: "encap_geneve_arp"
+  }
+  params {
+    id: 1
+    name: "port"
+    bitwidth: 9
+  }
+  params {
+    id: 2
+    name: "outer_src_mac"
+    bitwidth: 48
+  }
+  params {
+    id: 3
+    name: "outer_dst_mac"
+    bitwidth: 48
+  }
+  params {
+    id: 4
+    name: "outer_src_ip"
+    bitwidth: 32
+  }
+  params {
+    id: 5
+    name: "outer_dst_ip"
+    bitwidth: 32
+  }
+  params {
+    id: 6
+    name: "vni"
+    bitwidth: 24
+  }
+  params {
+    id: 7
+    name: "tlv_value"
+    bitwidth: 32
+  }
+}
+actions {
+  preamble {
+    id: 29662784
+    name: "MyIngress.decap_geneve_ipv4"
+    alias: "decap_geneve_ipv4"
+  }
+  params {
+    id: 1
+    name: "port"
+    bitwidth: 9
+  }
+}
+actions {
+  preamble {
+    id: 23444996
+    name: "MyIngress.decap_geneve_arp"
+    alias: "decap_geneve_arp"
+  }
+  params {
+    id: 1
+    name: "port"
+    bitwidth: 9
+  }
+}
+type_info {
+}
