@@ -108,7 +108,6 @@ common_central_kernel_config(){
     echo 0 > /proc/sys/net/ipv4/conf/${tun_out}/rp_filter
     echo 0 > /proc/sys/net/ipv4/conf/${isp}/rp_filter
     iptables -I FORWARD 1 -i ${access_if} -j DROP 2>/dev/null || true
-    iptables -I INPUT 1 -i ${access_if} -p udp --dport 6081 -j DROP
     iptables -I FORWARD 1 -i ${mpls_if} -j DROP 2>/dev/null || true
     iptables -t nat -A POSTROUTING -o ${isp} -j SNAT --to-source ${isp_ip}
     iptables -A FORWARD -i ${tun_out} -o ${isp} -j ACCEPT
@@ -118,7 +117,7 @@ common_central_kernel_config(){
     ip route replace ${remote_bcg_ip}/32 dev wg0
     ip route replace ${fake_bcg_ip}/32 dev ${tun_out}
     ip neigh replace ${fake_bcg_ip} lladdr ${fake_mac} dev ${tun_out} nud permanent
-    iptables -I INPUT -i ${tun_out} -p udp --dport 6081 -j DROP
+    iptables -C INPUT -i ${access_if} -p udp --dport 6081 -j DROP 2>/dev/null || iptables -I INPUT 1 -i ${access_if} -p udp --dport 6081 -j DROP
   "
 }
 deploy_central1(){
@@ -180,7 +179,7 @@ deploy_bcg(){
   docker cp "$P4_BCG_CONFIG" ${name}:/tmp/p4config.json
   docker exec -d ${name} bash -c "simple_switch -i 0@${rport} -i 1@${aport} -i 2@${cport} --thrift-port ${thrift} --log-console /tmp/p4config.json > /var/log/simple_switch.log 2>&1"
   sleep 3; docker exec ${name} pgrep -x simple_switch >/dev/null || print_error "simple_switch ${name} no arranco"
-  docker exec ${name} iptables -I INPUT 1 -i ${aport} -p udp --dport 6081 -j DROP
+  docker exec ${name} bash -c "iptables -C INPUT -i ${aport} -p udp --dport 6081 -j DROP 2>/dev/null || iptables -I INPUT 1 -i ${aport} -p udp --dport 6081 -j DROP"
   local bcg_mac cen_mac bcg_hex cen_hex
   bcg_mac=$(get_mac ${name} ${aport}); cen_mac=$(get_mac ${central_name} ${central_access})
   if [ "${num}" = "1" ]; then bcg_hex=$(ip2hex ${BCG1_IP}); cen_hex=$(ip2hex ${CENTRAL1_IP}); else bcg_hex=$(ip2hex ${BCG2_IP}); cen_hex=$(ip2hex ${CENTRAL2_IP}); fi
