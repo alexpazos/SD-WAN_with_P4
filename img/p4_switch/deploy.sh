@@ -130,7 +130,7 @@ deploy_central1(){
   create_internal_veth "p4-central-sede1" "p4c1-tun-in" "p4c1-tun-out"
   common_central_kernel_config "p4-central-sede1" "p4c1-tun-out" "p4c1-isp" "${CENTRAL1_ISP_IP}" "${CENTRAL1_ISP_GW}" "10.20.1.0/24" "${BCG1_IP}" "02:00:00:00:01:02" "${BCG2_IP}" "${WG_PUB_SEDE2}" "${CENTRAL2_ISP_IP}" "${WG_C1_IP}" "${WG_PRIV_SEDE1}"
   docker cp "$P4_CENTRAL_CONFIG" p4-central-sede1:/tmp/p4config.json
-  docker exec -d p4-central-sede1 bash -c "simple_switch -i 0@p4c1-access -i 1@p4c1-mpls -i 2@p4c1-tun-in --thrift-port 9091 --log-console /tmp/p4config.json > /var/log/simple_switch.log 2>&1"
+  docker exec -d p4-central-sede1 bash -c "simple_switch -i 0@p4c1-access -i 1@p4c1-mpls -i 2@p4c1-tun-in --thrift-port 9091 /tmp/p4config.json > /var/log/simple_switch.log 2>&1"
   sleep 3; docker exec p4-central-sede1 pgrep -x simple_switch >/dev/null || print_error "simple_switch central1 no arranco"
   local tin tout; tin=$(get_mac p4-central-sede1 p4c1-tun-in); tout=$(get_mac p4-central-sede1 p4c1-tun-out)
   run_p4_cli "p4-central-sede1" "9091" "
@@ -153,7 +153,7 @@ deploy_central2(){
   create_internal_veth "p4-central-sede2" "p4c2-tun-in" "p4c2-tun-out"
   common_central_kernel_config "p4-central-sede2" "p4c2-tun-out" "p4c2-isp" "${CENTRAL2_ISP_IP}" "${CENTRAL2_ISP_GW}" "10.20.2.0/24" "${BCG2_IP}" "02:00:00:00:02:03" "${BCG1_IP}" "${WG_PUB_SEDE1}" "${CENTRAL1_ISP_IP}" "${WG_C2_IP}" "${WG_PRIV_SEDE2}"
   docker cp "$P4_CENTRAL_CONFIG" p4-central-sede2:/tmp/p4config.json
-  docker exec -d p4-central-sede2 bash -c "simple_switch -i 0@p4c2-access -i 1@p4c2-mpls -i 2@p4c2-tun-in --thrift-port 9092 --log-console /tmp/p4config.json > /var/log/simple_switch.log 2>&1"
+  docker exec -d p4-central-sede2 bash -c "simple_switch -i 0@p4c2-access -i 1@p4c2-mpls -i 2@p4c2-tun-in --thrift-port 9092 /tmp/p4config.json > /var/log/simple_switch.log 2>&1"
   sleep 3; docker exec p4-central-sede2 pgrep -x simple_switch >/dev/null || print_error "simple_switch central2 no arranco"
   local tin tout; tin=$(get_mac p4-central-sede2 p4c2-tun-in); tout=$(get_mac p4-central-sede2 p4c2-tun-out)
   run_p4_cli "p4-central-sede2" "9092" "
@@ -177,7 +177,7 @@ deploy_bcg(){
   attach_linux "${name}" "${cport}" "${cpe_lan}" "${veth_cpe}"
   attach_ovs "${name}" "${aport}" "AccessNet${num}" "${bcg_ip}"
   docker cp "$P4_BCG_CONFIG" ${name}:/tmp/p4config.json
-  docker exec -d ${name} bash -c "simple_switch -i 0@${rport} -i 1@${aport} -i 2@${cport} --thrift-port ${thrift} --log-console /tmp/p4config.json > /var/log/simple_switch.log 2>&1"
+  docker exec -d ${name} bash -c "simple_switch -i 0@${rport} -i 1@${aport} -i 2@${cport} --thrift-port ${thrift} /tmp/p4config.json > /var/log/simple_switch.log 2>&1"
   sleep 3; docker exec ${name} pgrep -x simple_switch >/dev/null || print_error "simple_switch ${name} no arranco"
   docker exec ${name} bash -c "iptables -C INPUT -i ${aport} -p udp --dport 6081 -j DROP 2>/dev/null || iptables -I INPUT 1 -i ${aport} -p udp --dport 6081 -j DROP"
   local bcg_mac cen_mac bcg_hex cen_hex
@@ -232,9 +232,24 @@ verify(){
 
 main(){
   echo -e "${CYAN}\n==========================================\n  SD-WAN P4 - Internet CPE/NAT\n==========================================${NC}"
-  setup_wg_keys; check_prerequisites; deploy_central1; deploy_central2
+  
+  # Evitar filtrado del host sobre tráfico bridged VNX/Linux bridge
+  sysctl -w net.bridge.bridge-nf-call-iptables=0
+  sysctl -w net.bridge.bridge-nf-call-ip6tables=0
+  
+  setup_wg_keys
+  check_prerequisites
+
+  deploy_central1
+  deploy_central2
+
   deploy_bcg "sede1" "1" "lan11" "lan12" "${BCG1_IP}" "p4-central-sede1" "p4c1-access" "9093" "172.16.0.21"
   deploy_bcg "sede2" "2" "lan21" "lan22" "${BCG2_IP}" "p4-central-sede2" "p4c2-access" "9094" "172.16.0.22"
-  populate_return_tables; verify; print_info "Despliegue completado"
+
+  populate_return_tables
+
+  verify
+
+  print_info "Despliegue completado"
 }
 main
