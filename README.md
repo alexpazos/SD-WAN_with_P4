@@ -64,15 +64,18 @@ clase por el camino que le corresponde:
 
 ```
 .
-├── bcg_switch.p4          # programa P4 del switch de borde (BCG)
-├── central_switch.p4      # programa P4 del switch central
-├── compile.sh             # compilación de los programas P4 (p4c → BMv2)
-├── deploy.sh              # despliegue de contenedores P4, OVS, WireGuard y NAT
-├── destroy.sh             # destrucción de los contenedores P4 (no toca VNX)
-├── despliegue_clab.sh     # despliegue del escenario base con Containerlab
-├── arranque_rdsv_final.sh # arranque integral del escenario (VNX + Clab)
-├── destruir_rsdv_final.sh # destrucción integral del escenario
-└── sdedge_nfv_sedes.xml   # topología VNX de las dos sedes
+├── arranque_rdsv_final.sh        # arranque integral del escenario (VNX + Clab)
+├── destruir_rsdv_final.sh        # destrucción integral del escenario
+├── despliegue_clab.sh            # despliegue del escenario base con Containerlab
+├── img/
+│   └── p4_switch/
+│       ├── bcg_switch.p4         # programa P4 del switch de borde (BCG)
+│       ├── central_switch.p4     # programa P4 del switch central
+│       ├── compile.sh            # compilación de los programas P4 (p4c → BMv2)
+│       ├── deploy.sh             # despliegue de contenedores P4, OVS, WireGuard y NAT
+│       └── destroy.sh            # destrucción de los contenedores P4 (no toca VNX)
+└── vnx/
+    └── sdedge_nfv_sedes.xml      # topología VNX de las dos sedes
 ```
 
 ## 🚀 Despliegue
@@ -82,11 +85,12 @@ El escenario se apoya en un entorno base heredado de la práctica de la asignatu
 switches P4 desarrollados en este trabajo.
 
 ```bash
-# 1. Compilar los programas P4
-./compile.sh
-
-# 2. Levantar el escenario base (VNX + Containerlab)
+# 1. Arranque integral del escenario base (VNX + Containerlab + VNF)
 ./arranque_rdsv_final.sh
+
+# 2. Compilar los programas P4
+cd img/p4_switch
+./compile.sh
 
 # 3. Desplegar los switches P4, WireGuard y NAT
 ./deploy.sh
